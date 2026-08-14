@@ -66,13 +66,20 @@ export async function crear(tabla, datos) {
 }
 
 // ---- ACTUALIZAR ----
+// Campos que la base genera sola y NO se pueden actualizar (la base los rechaza).
+const CAMPOS_NO_EDITABLES = ['id', 'creado_en'];
+
 export async function actualizar(tabla, id, cambios) {
   if (modoDemo) {
     const fila = (demoStore[tabla] || []).find((f) => f.id === Number(id));
     if (fila) Object.assign(fila, cambios);
     return fila;
   }
-  const { data, error } = await supabase.from(tabla).update(cambios).eq('id', id).select().single();
+  // Sacar campos autogenerados: si vienen en el objeto, la base rechaza el update
+  // ("column id can only be updated to DEFAULT").
+  const limpios = { ...cambios };
+  CAMPOS_NO_EDITABLES.forEach((c) => delete limpios[c]);
+  const { data, error } = await supabase.from(tabla).update(limpios).eq('id', id).select().single();
   if (error) throw error;
   return data;
 }

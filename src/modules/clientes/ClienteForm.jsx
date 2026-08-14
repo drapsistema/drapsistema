@@ -143,10 +143,18 @@ export default function ClienteForm() {
           </div>
           <div className="field">
             <label>Vendedor asignado</label>
-            <select value={form.vendedor_id || ''} onChange={(e) => set('vendedor_id', e.target.value)}>
-              <option value="">— Sin asignar —</option>
-              {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
-            </select>
+            {esAdministrador(perfil) ? (
+              <select value={form.vendedor_id || ''} onChange={(e) => set('vendedor_id', e.target.value)}>
+                <option value="">— Sin asignar —</option>
+                {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+              </select>
+            ) : (
+              <>
+                <input value={vendedores.find((v) => v.id === form.vendedor_id)?.nombre || 'Vos'} disabled
+                  style={{ background: 'var(--panel-2)', color: 'var(--ink-3)' }} />
+                <div className="hint">Solo un administrador puede reasignar el vendedor.</div>
+              </>
+            )}
           </div>
 
           <div className="field full">

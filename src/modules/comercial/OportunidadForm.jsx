@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listar, crear } from '../../lib/db';
 import { PageHeader, BackButton, nombreCliente, hoyISO } from '../../shared/ui.jsx';
-import { usuariosConRolPrefijo } from '../../shared/permisos';
+import { usuariosConRolPrefijo, esAdministrador } from '../../shared/permisos';
+import { useAuth } from '../../shared/Auth.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import Icon from '../../shared/Icon.jsx';
 
@@ -12,6 +13,7 @@ export default function OportunidadForm() {
   const [clientes, setClientes] = useState([]);
   const [vendedores, setVendedores] = useState([]);
   const [form, setForm] = useState({ cliente_id: '', vendedor_id: '', fecha_contacto: hoyISO(), relevamiento: '' });
+  const { perfil, usuarioActualId } = useAuth();
   const [errores, setErrores] = useState({});
 
   useEffect(() => {
@@ -28,8 +30,13 @@ export default function OportunidadForm() {
     setErrores(e);
     if (Object.keys(e).length) return;
 
+    // Si un vendedor (no admin) crea la oportunidad, queda a su nombre.
+    // Solo el admin puede asignarla a otro.
+    let vendedor_id = form.vendedor_id ? Number(form.vendedor_id) : null;
+    if (!esAdministrador(perfil) && !vendedor_id) vendedor_id = usuarioActualId;
+
     const nueva = await crear('oportunidades', {
-      cliente_id: Number(form.cliente_id), vendedor_id: form.vendedor_id ? Number(form.vendedor_id) : null,
+      cliente_id: Number(form.cliente_id), vendedor_id,
       etapa: 'Contacto inicial', fecha_contacto: form.fecha_contacto, relevamiento: form.relevamiento,
       resultado: null, motivo: '', motivo_detalle: '',
     });
@@ -54,10 +61,17 @@ export default function OportunidadForm() {
           </div>
           <div className="field">
             <label>Vendedor</label>
-            <select value={form.vendedor_id} onChange={(e) => set('vendedor_id', e.target.value)}>
-              <option value="">— Sin asignar —</option>
-              {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
-            </select>
+            {esAdministrador(perfil) ? (
+              <select value={form.vendedor_id} onChange={(e) => set('vendedor_id', e.target.value)}>
+                <option value="">— Sin asignar —</option>
+                {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+              </select>
+            ) : (
+              <>
+                <input value={perfil?.nombre || 'Vos'} disabled style={{ background: 'var(--panel-2)', color: 'var(--ink-3)' }} />
+                <div className="hint">Solo un administrador puede asignar la oportunidad a otro vendedor.</div>
+              </>
+            )}
           </div>
           <div className="field">
             <label>Fecha del primer contacto</label>
