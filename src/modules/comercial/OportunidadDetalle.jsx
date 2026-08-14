@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { obtener, listar, crear, actualizar } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, diasDesde, hoyISO } from '../../shared/ui.jsx';
-import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
+import { obtener, listar } from '../../lib/db';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, diasDesde } from '../../shared/ui.jsx';
+import Comentarios from '../../shared/Comentarios.jsx';
+import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import Icon from '../../shared/Icon.jsx';
-
-const ETAPAS = ['Contacto inicial', 'Cotización', 'Seguimiento', 'Cierre'];
+import { ETAPAS, REQUISITOS, camposFaltantes, completarEtapa, avanzarEtapa } from './etapas.js';
 
 export default function OportunidadDetalle() {
   const { id } = useParams();
@@ -17,6 +17,7 @@ export default function OportunidadDetalle() {
   const [cotizaciones, setCotizaciones] = useState([]);
   const [seguimientos, setSeguimientos] = useState([]);
   const [venta, setVenta] = useState(null);
+  const [accion, setAccion] = useState(null); // 'coti' | 'seg' | 'cierre' | null
 
   useEffect(() => { cargar(); }, [id]);
 
@@ -38,51 +39,66 @@ export default function OportunidadDetalle() {
 
   const cerrada = Boolean(op.resultado);
   const idxEtapa = ETAPAS.indexOf(op.etapa);
+  const ctx = { cotizaciones, seguimientos };
 
-  async function subirCotizacion() {
-    const version = cotizaciones.length + 1;
-    await crear('cotizaciones', {
-      oportunidad_id: Number(id), version, pdf: `cotizacion_v${version}.pdf`, fecha_envio: hoyISO(),
-    });
-    // Automatización: al subir la primera cotización, avanza a etapa Cotización.
-    if (op.etapa === 'Contacto inicial') {
-      await actualizar('oportunidades', id, { etapa: 'Cotización' });
+  // Configuración de cada modal de acción. El cierre pide, además del
+  // resultado, todo lo que falte para poder cerrar (misma lógica que
+  // arrastrar la tarjeta hasta Cierre).
+  const ACCIONES = {
+    coti: {
+      titulo: 'Agregar cotización',
+      subtitulo: 'Registrá la cotización enviada al cliente.',
+      campos: REQUISITOS['Cotización'].campos,
+      textoConfirmar: 'Guardar cotización',
+      run: (valores) => completarEtapa(op, 'Cotización', valores, ctx),
+    },
+    seg: {
+      titulo: 'Registrar seguimiento',
+      subtitulo: 'Dejá constancia del contacto con el cliente.',
+      campos: REQUISITOS['Seguimiento'].campos,
+      textoConfirmar: 'Guardar seguimiento',
+      run: (valores) => completarEtapa(op, 'Seguimiento', valores, ctx),
+    },
+    cierre: {
+      titulo: 'Cerrar oportunidad',
+      subtitulo: 'Cargá el resultado. Si falta algún paso previo, se pide acá también.',
+      campos: camposFaltantes(op, 'Cierre', ctx),
+      textoConfirmar: 'Cerrar oportunidad',
+      run: (valores) => avanzarEtapa(op, 'Cierre', valores, ctx),
+    },
+  };
+  const accionActual = accion ? ACCIONES[accion] : null;
+
+  async function onConfirmAccion(valores) {
+    const cfg = ACCIONES[accion];
+    setAccion(null);
+    try {
+      const res = await cfg.run(valores);
+      if (res && res.ventaId) {
+        toast('Oportunidad ganada · venta creada');
+        navigate(`/ventas/${res.ventaId}`);
+        return;
+      }
+      toast(accion === 'cierre' ? 'Oportunidad cerrada' : 'Guardado');
+      await cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo guardar', 'err');
     }
-    toast('Cotización cargada');
-    cargar();
   }
 
-  async function registrarSeguimiento() {
-    await crear('seguimientos', {
-      oportunidad_id: Number(id), tipo: 'Llamada', fecha: hoyISO(),
-      observaciones: 'Seguimiento registrado.', proximo_contacto: '',
-    });
-    if (op.etapa === 'Cotización') {
-      await actualizar('oportunidades', id, { etapa: 'Seguimiento' });
-    }
-    toast('Seguimiento registrado');
-    cargar();
-  }
-
-  async function ganar() {
-    if (cotizaciones.length === 0) { toast('No podés ganar sin al menos una cotización', 'err'); return; }
-    await actualizar('oportunidades', id, { resultado: 'Ganada', etapa: 'Cierre' });
-    const nueva = await crear('ventas', {
-      oportunidad_id: Number(id), cliente_id: op.cliente_id, vendedor_id: op.vendedor_id,
-      fecha_ganada: hoyISO(), direccion_entrega: '', fecha_entrega: '', observaciones: '',
-      cobrado: false, registrado: false, comision: 0, estado: 'Ganada', motivo_cancel: '', fecha_cancel: '',
-    });
-    await comentarSistema('op', id, 'Oportunidad ganada. Se creó la venta enlazada.');
-    toast('Oportunidad ganada · venta creada');
-    navigate(`/ventas/${nueva.id}`);
-  }
+  const motivoPerdida = op.motivo === 'Otro' ? (op.motivo_detalle || 'Otro') : op.motivo;
 
   return (
     <div>
       <PageHeader titulo={`Oportunidad #${op.id} · ${nombreCliente(cliente)}`}
         sub={`Etapa: ${op.etapa} · primer contacto ${fmtFecha(op.fecha_contacto)}`}>
         <BackButton to="/comercial" />
-        {!cerrada && <button className="btn" onClick={ganar}><Icon name="check" size={15} /> Marcar ganada</button>}
+        {!cerrada && <>
+          <button className="btn ghost" onClick={() => setAccion('coti')}>+ Cotización</button>
+          <button className="btn ghost" onClick={() => setAccion('seg')}>+ Seguimiento</button>
+          <button className="btn" onClick={() => setAccion('cierre')}><Icon name="check" size={15} /> Cerrar</button>
+        </>}
         {op.resultado === 'Ganada' && venta &&
           <button className="btn ghost" onClick={() => navigate(`/ventas/${venta.id}`)}>Ver venta</button>}
       </PageHeader>
@@ -96,7 +112,7 @@ export default function OportunidadDetalle() {
       {cerrada && (
         <div className={'aviso ' + (op.resultado === 'Ganada' ? 'ok' : 'bad')}>
           Oportunidad cerrada como <b style={{ margin: '0 4px' }}>{op.resultado}</b>
-          {op.motivo && ` · motivo: ${op.motivo}`}
+          {op.resultado === 'Perdida' && motivoPerdida && ` · motivo: ${motivoPerdida}`}
         </div>
       )}
 
@@ -105,12 +121,12 @@ export default function OportunidadDetalle() {
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-h">
               <span className="grow">Cotizaciones ({cotizaciones.length})</span>
-              {!cerrada && <button className="btn ghost sm" onClick={subirCotizacion}>+ Subir PDF</button>}
+              {!cerrada && <button className="btn ghost sm" onClick={() => setAccion('coti')}>+ Agregar</button>}
             </div>
             <div className="table-wrap">
               {cotizaciones.length === 0 ? <Empty>Sin cotizaciones.</Empty> : (
                 <table>
-                  <thead><tr><th>Versión</th><th>Archivo</th><th>Envío</th><th>Días</th></tr></thead>
+                  <thead><tr><th>Versión</th><th>Referencia</th><th>Envío</th><th>Días</th></tr></thead>
                   <tbody>
                     {cotizaciones.map((c) => (
                       <tr key={c.id}>
@@ -129,7 +145,7 @@ export default function OportunidadDetalle() {
           <div className="card">
             <div className="card-h">
               <span className="grow">Seguimientos ({seguimientos.length})</span>
-              {!cerrada && <button className="btn ghost sm" onClick={registrarSeguimiento}>+ Registrar</button>}
+              {!cerrada && <button className="btn ghost sm" onClick={() => setAccion('seg')}>+ Registrar</button>}
             </div>
             <div className="card-pad">
               {seguimientos.length === 0 ? <div className="muted sm">Sin seguimientos.</div> :
@@ -137,6 +153,9 @@ export default function OportunidadDetalle() {
                   <div key={s.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--line-2)' }}>
                     <div className="strong sm">{fmtFecha(s.fecha)} · {s.tipo}</div>
                     <div className="muted sm">{s.observaciones}</div>
+                    {s.proximo_contacto && (
+                      <div className="muted sm" style={{ marginTop: 2 }}>Próximo contacto: {fmtFecha(s.proximo_contacto)}</div>
+                    )}
                   </div>
                 ))}
             </div>
@@ -158,6 +177,17 @@ export default function OportunidadDetalle() {
           </div>
         </div>
       </div>
+
+      {accionActual && (
+        <ModalCampos
+          titulo={accionActual.titulo}
+          subtitulo={accionActual.subtitulo}
+          campos={accionActual.campos}
+          textoConfirmar={accionActual.textoConfirmar}
+          onConfirm={onConfirmAccion}
+          onCancel={() => setAccion(null)}
+        />
+      )}
     </div>
   );
 }

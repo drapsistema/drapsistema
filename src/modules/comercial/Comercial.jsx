@@ -1,27 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { listar, actualizar, crear } from '../../lib/db';
-import { PageHeader, nombreCliente, hoyISO } from '../../shared/ui.jsx';
-import { comentarSistema } from '../../shared/Comentarios.jsx';
+import { listar } from '../../lib/db';
+import { PageHeader, nombreCliente } from '../../shared/ui.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import Board from '../../shared/Board.jsx';
+import { ETAPAS, camposFaltantes, avanzarEtapa } from './etapas.js';
 
-const ESTADOS = [
-  { id: 'Contacto inicial', label: 'Contacto inicial' },
-  { id: 'Cotización', label: 'Cotización' },
-  { id: 'Seguimiento', label: 'Seguimiento' },
-  { id: 'Cierre', label: 'Cierre' },
-];
+const ESTADOS = ETAPAS.map((e) => ({ id: e, label: e }));
 
-// Campos obligatorios para pasar de un estado a otro (feature 2).
-function camposTransicion(desde, hacia) {
-  if (hacia === 'Cierre') {
-    return [
-      { name: 'resultado', label: 'Resultado', type: 'select', options: ['Ganada', 'Perdida'], required: true },
-      { name: 'motivo', label: 'Motivo (obligatorio si es perdida)', type: 'text', required: false },
-    ];
-  }
-  return [];
+// Agrupa una lista por una clave (para armar el contexto por oportunidad).
+function agrupar(lista, clave) {
+  const m = {};
+  (lista || []).forEach((x) => {
+    const k = x[clave];
+    (m[k] = m[k] || []).push(x);
+  });
+  return m;
 }
 
 export default function Comercial() {
@@ -32,38 +26,48 @@ export default function Comercial() {
   const navigate = useNavigate();
   const toast = useToast();
 
-  useEffect(() => {
-    listar('oportunidades').then(setOps);
-    listar('clientes').then(setClientes);
-  }, []);
+  useEffect(() => { cargar(); }, []);
 
-  let items = ops.map((o) => ({ ...o, estado: o.etapa }));
+  async function cargar() {
+    // Cargamos también cotizaciones y seguimientos para saber qué datos
+    // ya tiene cada oportunidad, y así calcular qué falta al arrastrar.
+    const [opsR, clsR, cotsR, segsR] = await Promise.all([
+      listar('oportunidades'), listar('clientes'),
+      listar('cotizaciones'), listar('seguimientos'),
+    ]);
+    const cotsPorOp = agrupar(cotsR, 'oportunidad_id');
+    const segsPorOp = agrupar(segsR, 'oportunidad_id');
+    const enriquecidas = opsR.map((o) => ({
+      ...o,
+      estado: o.etapa,
+      _ctx: { cotizaciones: cotsPorOp[o.id] || [], seguimientos: segsPorOp[o.id] || [] },
+    }));
+    setOps(enriquecidas);
+    setClientes(clsR);
+  }
+
+  let items = ops;
   if (filtroEtapa) items = items.filter((i) => i.estado === filtroEtapa);
 
-  async function mover(item, nuevoEstado, valores) {
-    // Validación de negocio: no cerrar como perdida sin motivo.
-    if (nuevoEstado === 'Cierre' && valores.resultado === 'Perdida' && !valores.motivo) {
-      toast('Para cerrar como perdida, cargá el motivo', 'err');
-      return;
-    }
-    const cambios = { etapa: nuevoEstado };
-    if (valores.resultado) cambios.resultado = valores.resultado;
-    if (valores.motivo) cambios.motivo = valores.motivo;
-    await actualizar('oportunidades', item.id, cambios);
-    setOps((prev) => prev.map((o) => (o.id === item.id ? { ...o, ...cambios } : o)));
+  // Qué campos faltan para llevar esta oportunidad a `hacia` (acumulativo).
+  const camposTransicion = (item, hacia) => camposFaltantes(item, hacia, item._ctx);
 
-    // Automatización: al ganar, se crea la venta enlazada (hereda vendedor).
-    if (cambios.resultado === 'Ganada') {
-      const venta = await crear('ventas', {
-        oportunidad_id: item.id, cliente_id: item.cliente_id, vendedor_id: item.vendedor_id,
-        fecha_ganada: hoyISO(), direccion_entrega: '', fecha_entrega: '', observaciones: '',
-        cobrado: false, registrado: false, comision: 0, estado: 'Ganada', motivo_cancel: '', fecha_cancel: '',
-      });
-      await comentarSistema('op', item.id, 'Oportunidad ganada. Se creó la venta enlazada.');
-      toast('Oportunidad ganada · venta creada');
-      navigate(`/ventas/${venta.id}`);
-    } else {
-      toast('Oportunidad movida a ' + nuevoEstado);
+  async function mover(item, hacia, valores) {
+    const iA = ETAPAS.indexOf(item.estado), iH = ETAPAS.indexOf(hacia);
+    if (iH < iA) { toast('No se puede volver a una etapa anterior', 'err'); return; }
+    if (iH === iA) return;
+    try {
+      const res = await avanzarEtapa(item, hacia, valores, item._ctx);
+      if (res.ventaId) {
+        toast('Oportunidad ganada · venta creada');
+        navigate(`/ventas/${res.ventaId}`);
+        return;
+      }
+      toast('Oportunidad movida a ' + hacia);
+      await cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo actualizar la oportunidad', 'err');
     }
   }
 
