@@ -1,0 +1,47 @@
+/* ============================================================
+   Vistas Kanban / Lista con drag & drop (features 1 y 2).
+   Reutilizable por CRM comercial, postventa y service.
+   ============================================================ */
+
+/* toggle Kanban / Lista */
+.view-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.view-toggle button {
+  background: var(--panel); border: none; padding: 7px 14px; font-size: 12.5px;
+  color: var(--ink-3); cursor: pointer; font-family: inherit;
+}
+.view-toggle button.on { background: var(--brand); color: #fff; }
+
+/* tablero kanban */
+.kanban { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+.kcol {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  min-width: 260px; max-width: 300px; flex: 1; display: flex; flex-direction: column;
+}
+.kcol.drop-hover { border-color: var(--brand); background: var(--brand-bg); }
+.kcol-h {
+  padding: 11px 13px; font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+  border-bottom: 1px solid var(--line); display: flex; justify-content: space-between;
+}
+.kcol-body { padding: 10px; display: flex; flex-direction: column; gap: 9px; min-height: 60px; }
+
+.kcard {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 11px 12px; box-shadow: var(--shadow); cursor: grab; font-size: 13px;
+}
+.kcard:active { cursor: grabbing; }
+.kcard.dragging { opacity: .5; }
+.kcard .kcard-t { font-weight: 600; margin-bottom: 3px; }
+.kcard .kcard-s { font-size: 12px; color: var(--ink-3); }
+
+/* modal de transición (campos obligatorios al soltar) */
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(20,12,6,.5); z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.modal { background: var(--panel); border-radius: 12px; width: 100%; max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3); overflow: hidden; }
+.modal-h { display: flex; align-items: center; justify-content: space-between;
+  padding: 15px 20px; border-bottom: 1px solid var(--line-2); font-weight: 600; }
+.modal-x { background: none; border: none; color: var(--ink-3); font-size: 16px; cursor: pointer; }
+.modal-b { padding: 18px 20px; }
+.modal-foot { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
