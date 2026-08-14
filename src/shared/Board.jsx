@@ -1,17 +1,32 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
-  PointerSensor, useSensor, useSensors,
+  MouseSensor, TouchSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
 import './board.css';
 
 // ============================================================
 // COMPONENTE BOARD REUTILIZABLE
-// Cubre las tres features nuevas para CRM, postventa y service:
+// Cubre las features de tablero para CRM, postventa y service:
 //   1. Toggle Kanban / Lista (el usuario elige cómo verlo).
 //   2. Drag & drop entre estados. Al soltar en un estado nuevo,
 //      si ese cambio exige campos obligatorios, se abre un modal
 //      para completarlos antes de confirmar.
+//   3. Click / tap en una tarjeta para abrir su detalle.
+//
+// SOBRE EL DRAG (importante):
+//   - En desktop usamos MouseSensor: arrastra apenas el puntero se
+//     mueve 8px. Un click que no supera ese umbral abre la tarjeta.
+//   - En mobile usamos TouchSensor con delay: hay que MANTENER el
+//     dedo ~180ms para empezar a arrastrar. Así:
+//        · toque rápido            -> abre la tarjeta (click)
+//        · toque sostenido + mover -> arrastra
+//        · deslizar rápido         -> scrollea el tablero
+//   - La captura de coordenadas para distinguir click de arrastre va
+//     por el evento 'pointerdown' (independiente de mouse/touch), así
+//     que no pisa los listeners de dnd-kit. Este era el bug que
+//     impedía arrastrar: antes onPointerDown sobrescribía el handler
+//     que dnd-kit usa para iniciar el drag.
 //
 // Props:
 //   estados: [{ id, label }]           columnas / estados posibles
@@ -22,6 +37,8 @@ import './board.css';
 //        estado a otro. Si devuelve [], la transición es directa.
 //   onMover: (item, nuevoEstado, valores) => void
 //        se llama al confirmar el cambio de estado.
+//   onCardClick: (item) => void
+//        se llama al hacer click/tap (sin arrastrar) en una tarjeta.
 // ============================================================
 
 export default function Board({ estados, items, render, camposTransicion, onMover, onCardClick }) {
@@ -47,7 +64,12 @@ export default function Board({ estados, items, render, camposTransicion, onMove
 function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, onCardClick }) {
   const [activo, setActivo] = useState(null);          // item que se arrastra
   const [transicion, setTransicion] = useState(null);  // { item, hacia, campos }
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  // Dos sensores según el dispositivo (ver nota arriba).
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+  );
 
   function onDragStart(e) {
     setActivo(items.find((i) => String(i.id) === String(e.active.id)));
@@ -61,15 +83,19 @@ function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, on
     const hacia = over.id;
     if (!item || item.estado === hacia) return;
 
-    // ¿Esta transición exige campos obligatorios? (feature 2)
+    // ¿Esta transición exige campos obligatorios?
     const campos = camposTransicion ? camposTransicion(item.estado, hacia) : [];
     if (campos && campos.length > 0) {
       const valoresIniciales = {};
-      campos.forEach((c) => { valoresIniciales[c.name] = ''; });
+      campos.forEach((c) => { valoresIniciales[c.name] = c.default ?? ''; });
       setTransicion({ item, hacia, campos, valores: valoresIniciales });
     } else {
       onMover(item, hacia, {});
     }
+    // NOTA: la tarjeta NO se mueve acá. Solo se moverá cuando onMover
+    // actualice el estado en la base tras un guardado exitoso. Si el
+    // usuario cancela el modal, la tarjeta vuelve sola a su columna
+    // original porque su posición se deriva de item.estado.
   }
 
   return (
@@ -112,22 +138,25 @@ function Columna({ estado, items, render, onCardClick }) {
   );
 }
 
-// La tarjeta distingue click de arrastre: si el puntero se movió más de
-// unos pocos px entre mousedown y mouseup, fue drag y no dispara el click.
+// La tarjeta distingue click de arrastre: guarda la posición del puntero
+// al apretar (evento pointerdown, que no interfiere con dnd-kit) y, si al
+// soltar el puntero casi no se movió, lo trata como click y abre el detalle.
 function Tarjeta({ item, render, onCardClick }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: String(item.id) });
-  const start = useState({ x: 0, y: 0 })[0];
-
-  function onPointerDown(e) { start.x = e.clientX; start.y = e.clientY; }
-  function onClick(e) {
-    const movido = Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y);
-    if (movido < 6 && onCardClick) onCardClick(item);
-  }
+  const start = useRef({ x: 0, y: 0 });
 
   return (
-    <div ref={setNodeRef} {...listeners} {...attributes}
-      onPointerDown={onPointerDown} onClick={onClick}
-      className={'kcard' + (isDragging ? ' dragging' : '')}>
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onPointerDown={(e) => { start.current = { x: e.clientX, y: e.clientY }; }}
+      onClick={(e) => {
+        const movido = Math.abs(e.clientX - start.current.x) + Math.abs(e.clientY - start.current.y);
+        if (movido < 8 && onCardClick) onCardClick(item);
+      }}
+      className={'kcard' + (isDragging ? ' dragging' : '')}
+    >
       {render(item)}
     </div>
   );
@@ -167,16 +196,19 @@ function ListaGrupo({ estado, items, render, onCardClick }) {
 
 function ListaFila({ item, render, onCardClick }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: String(item.id) });
-  const start = useState({ x: 0, y: 0 })[0];
-  function onPointerDown(e) { start.x = e.clientX; start.y = e.clientY; }
-  function onClick(e) {
-    const movido = Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y);
-    if (movido < 6 && onCardClick) onCardClick(item);
-  }
+  const start = useRef({ x: 0, y: 0 });
   return (
-    <div ref={setNodeRef} {...listeners} {...attributes}
-      onPointerDown={onPointerDown} onClick={onClick}
-      style={{ padding: '11px 16px', borderBottom: '1px solid var(--line-2)', cursor: 'pointer', opacity: isDragging ? .5 : 1 }}>
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onPointerDown={(e) => { start.current = { x: e.clientX, y: e.clientY }; }}
+      onClick={(e) => {
+        const movido = Math.abs(e.clientX - start.current.x) + Math.abs(e.clientY - start.current.y);
+        if (movido < 8 && onCardClick) onCardClick(item);
+      }}
+      style={{ padding: '11px 16px', borderBottom: '1px solid var(--line-2)', cursor: 'pointer', opacity: isDragging ? .5 : 1 }}
+    >
       {render(item)}
     </div>
   );
