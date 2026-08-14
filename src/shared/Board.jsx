@@ -3,6 +3,7 @@ import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   MouseSensor, TouchSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
+import ModalCampos from './ModalCampos.jsx';
 import './board.css';
 
 // ============================================================
@@ -10,35 +11,28 @@ import './board.css';
 // Cubre las features de tablero para CRM, postventa y service:
 //   1. Toggle Kanban / Lista (el usuario elige cómo verlo).
 //   2. Drag & drop entre estados. Al soltar en un estado nuevo,
-//      si ese cambio exige campos obligatorios, se abre un modal
-//      para completarlos antes de confirmar.
+//      si ese cambio exige campos, se abre un modal para
+//      completarlos (solo los que falten) antes de confirmar.
 //   3. Click / tap en una tarjeta para abrir su detalle.
 //
-// SOBRE EL DRAG (importante):
-//   - En desktop usamos MouseSensor: arrastra apenas el puntero se
-//     mueve 8px. Un click que no supera ese umbral abre la tarjeta.
-//   - En mobile usamos TouchSensor con delay: hay que MANTENER el
-//     dedo ~180ms para empezar a arrastrar. Así:
-//        · toque rápido            -> abre la tarjeta (click)
-//        · toque sostenido + mover -> arrastra
-//        · deslizar rápido         -> scrollea el tablero
-//   - La captura de coordenadas para distinguir click de arrastre va
-//     por el evento 'pointerdown' (independiente de mouse/touch), así
-//     que no pisa los listeners de dnd-kit. Este era el bug que
-//     impedía arrastrar: antes onPointerDown sobrescribía el handler
-//     que dnd-kit usa para iniciar el drag.
+// SOBRE EL DRAG:
+//   - Desktop: MouseSensor, arrastra apenas el puntero se mueve 8px.
+//   - Mobile:  TouchSensor con delay; hay que mantener el dedo ~180ms
+//     para arrastrar. Toque rápido = abre; deslizar = scrollea.
+//   - Las coordenadas para distinguir click de drag van por
+//     'pointerdown', que no pisa los listeners de dnd-kit.
 //
 // Props:
-//   estados: [{ id, label }]           columnas / estados posibles
-//   items:   [{ id, estado, ... }]     tarjetas
-//   render:  (item) => JSX             contenido de cada tarjeta
-//   camposTransicion: (desde, hacia) => [{ name, label, type, required }]
-//        devuelve los campos que hay que completar para pasar de un
-//        estado a otro. Si devuelve [], la transición es directa.
+//   estados: [{ id, label }]
+//   items:   [{ id, estado, ... }]
+//   render:  (item) => JSX
+//   camposTransicion: (item, hacia) => [{ name, label, type, required, ... }]
+//        recibe la TARJETA completa (no solo el estado), así el que
+//        la use puede devolver solo los campos que falten según los
+//        datos de esa oportunidad. Si devuelve [], la transición es
+//        directa.
 //   onMover: (item, nuevoEstado, valores) => void
-//        se llama al confirmar el cambio de estado.
 //   onCardClick: (item) => void
-//        se llama al hacer click/tap (sin arrastrar) en una tarjeta.
 // ============================================================
 
 export default function Board({ estados, items, render, camposTransicion, onMover, onCardClick }) {
@@ -65,7 +59,6 @@ function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, on
   const [activo, setActivo] = useState(null);          // item que se arrastra
   const [transicion, setTransicion] = useState(null);  // { item, hacia, campos }
 
-  // Dos sensores según el dispositivo (ver nota arriba).
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
@@ -83,20 +76,19 @@ function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, on
     const hacia = over.id;
     if (!item || item.estado === hacia) return;
 
-    // ¿Esta transición exige campos obligatorios?
-    const campos = camposTransicion ? camposTransicion(item.estado, hacia) : [];
+    // ¿Faltan datos para llegar a esa etapa? (acumulativo, según el item)
+    const campos = camposTransicion ? camposTransicion(item, hacia) : [];
     if (campos && campos.length > 0) {
-      const valoresIniciales = {};
-      campos.forEach((c) => { valoresIniciales[c.name] = c.default ?? ''; });
-      setTransicion({ item, hacia, campos, valores: valoresIniciales });
+      setTransicion({ item, hacia, campos });
     } else {
       onMover(item, hacia, {});
     }
-    // NOTA: la tarjeta NO se mueve acá. Solo se moverá cuando onMover
+    // La tarjeta NO se mueve acá: solo se moverá cuando onMover
     // actualice el estado en la base tras un guardado exitoso. Si el
-    // usuario cancela el modal, la tarjeta vuelve sola a su columna
-    // original porque su posición se deriva de item.estado.
+    // usuario cancela el modal, vuelve sola a su columna original.
   }
+
+  const destino = transicion ? estados.find((es) => es.id === transicion.hacia) : null;
 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -116,8 +108,11 @@ function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, on
       </DragOverlay>
 
       {transicion && (
-        <ModalTransicion
-          trans={transicion} estados={estados}
+        <ModalCampos
+          titulo={`Pasar a “${destino?.label}”`}
+          subtitulo="Para dejar la oportunidad en esta etapa, cargá los datos que faltan:"
+          campos={transicion.campos}
+          textoConfirmar="Confirmar cambio"
           onCancel={() => setTransicion(null)}
           onConfirm={(valores) => { onMover(transicion.item, transicion.hacia, valores); setTransicion(null); }}
         />
@@ -139,8 +134,8 @@ function Columna({ estado, items, render, onCardClick }) {
 }
 
 // La tarjeta distingue click de arrastre: guarda la posición del puntero
-// al apretar (evento pointerdown, que no interfiere con dnd-kit) y, si al
-// soltar el puntero casi no se movió, lo trata como click y abre el detalle.
+// al apretar (pointerdown, que no interfiere con dnd-kit) y, si al soltar
+// casi no se movió, lo trata como click y abre el detalle.
 function Tarjeta({ item, render, onCardClick }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: String(item.id) });
   const start = useRef({ x: 0, y: 0 });
@@ -210,57 +205,6 @@ function ListaFila({ item, render, onCardClick }) {
       style={{ padding: '11px 16px', borderBottom: '1px solid var(--line-2)', cursor: 'pointer', opacity: isDragging ? .5 : 1 }}
     >
       {render(item)}
-    </div>
-  );
-}
-
-function ModalTransicion({ trans, estados, onCancel, onConfirm }) {
-  const [valores, setValores] = useState(trans.valores);
-  const [errores, setErrores] = useState({});
-  const destino = estados.find((e) => e.id === trans.hacia);
-
-  function confirmar() {
-    const e = {};
-    trans.campos.forEach((c) => { if (c.required && !valores[c.name]) e[c.name] = true; });
-    setErrores(e);
-    if (Object.keys(e).length === 0) onConfirm(valores);
-  }
-
-  return (
-    <div className="modal-bg" onClick={(e) => e.target.className === 'modal-bg' && onCancel()}>
-      <div className="modal">
-        <div className="modal-h">
-          <span>Pasar a “{destino?.label}”</span>
-          <button className="modal-x" onClick={onCancel}>✕</button>
-        </div>
-        <div className="modal-b">
-          <p className="muted sm" style={{ marginBottom: 14 }}>
-            Para completar este cambio de estado, cargá los siguientes datos:
-          </p>
-          {trans.campos.map((c) => (
-            <div className="field" key={c.name}>
-              <label>{c.label}{c.required && <span className="req"> *</span>}</label>
-              {c.type === 'select' ? (
-                <select value={valores[c.name]} onChange={(ev) => setValores({ ...valores, [c.name]: ev.target.value })}
-                  style={errores[c.name] ? { borderColor: 'var(--red)' } : undefined}>
-                  <option value="">— Elegí —</option>
-                  {(c.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
-              ) : c.type === 'textarea' ? (
-                <textarea rows={2} value={valores[c.name]} onChange={(ev) => setValores({ ...valores, [c.name]: ev.target.value })}
-                  style={errores[c.name] ? { borderColor: 'var(--red)' } : undefined} />
-              ) : (
-                <input type={c.type || 'text'} value={valores[c.name]} onChange={(ev) => setValores({ ...valores, [c.name]: ev.target.value })}
-                  style={errores[c.name] ? { borderColor: 'var(--red)' } : undefined} />
-              )}
-            </div>
-          ))}
-          <div className="modal-foot">
-            <button className="btn ghost" onClick={onCancel}>Cancelar</button>
-            <button className="btn" onClick={confirmar}>Confirmar cambio</button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
