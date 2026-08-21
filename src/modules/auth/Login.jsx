@@ -38,7 +38,7 @@ export default function Login() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <div className="login-logo">D</div>
+          <img className="login-logo" src="/drap-mark.png" alt="DRAP" />
           <div>
             <b>DRAP</b>
             <div className="login-sub">Gestión integral</div>
