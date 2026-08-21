@@ -44,8 +44,10 @@ export const REQUISITOS = {
   'Cotización': {
     cumplido: (ctx) => (ctx.cotizaciones?.length || 0) > 0,
     campos: [
-      { name: 'coti_ref', label: 'Referencia / archivo de la cotización', type: 'text', required: true,
-        placeholder: 'Ej: Cotización DJI M30 · v1' },
+      // Guardamos SOLO un número de referencia (no el archivo) para no
+      // cargar peso a la base. El PDF vive donde el vendedor lo tenga.
+      { name: 'coti_ref', label: 'Número de referencia de la cotización', type: 'text', required: true,
+        placeholder: 'Ej: COT-000142' },
       { name: 'coti_fecha', label: 'Fecha de envío', type: 'date', required: true, default: hoyISO() },
     ],
     crearRegistro: async (op, valores, ctx) => {
@@ -129,25 +131,31 @@ export function camposFaltantes(op, hacia, ctx) {
   return campos;
 }
 
-// Efectos colaterales del cierre: al ganar se crea la venta enlazada;
-// al perder se deja constancia en el hilo de comentarios. Este es el
-// ÚNICO lugar donde se crea la venta (antes estaba duplicado).
+// Al perder, deja constancia del cierre en el hilo de comentarios.
+// (El caso Ganada lo maneja crearVentaGanada, que corre antes.)
 async function efectosCierre(op, camposOp) {
   if (!camposOp.resultado) return undefined;
-  if (camposOp.resultado === 'Ganada') {
-    const venta = await crear('ventas', {
-      oportunidad_id: op.id, cliente_id: op.cliente_id, vendedor_id: op.vendedor_id,
-      fecha_ganada: hoyISO(), direccion_entrega: '', fecha_entrega: '', observaciones: '',
-      cobrado: false, registrado: false, comision: 0,
-      estado: 'Ganada', motivo_cancel: '', fecha_cancel: '',
-    });
-    await comentarSistema('op', op.id, 'Oportunidad ganada. Se creó la venta enlazada.');
-    return venta.id;
+  if (camposOp.resultado === 'Perdida') {
+    const detalle = camposOp.motivo === 'Otro' ? camposOp.motivo_detalle : camposOp.motivo;
+    await comentarSistema('op', op.id, `Oportunidad cerrada como perdida${detalle ? ' · motivo: ' + detalle : ''}.`);
   }
-  // Perdida
-  const detalle = camposOp.motivo === 'Otro' ? camposOp.motivo_detalle : camposOp.motivo;
-  await comentarSistema('op', op.id, `Oportunidad cerrada como perdida${detalle ? ' · motivo: ' + detalle : ''}.`);
-  return undefined;
+}
+
+// Crea la venta enlazada al ganar. IMPORTANTE: solo mandamos los campos
+// que hacen falta; los de tipo `date` (fecha_entrega, fecha_cancel) NO
+// se envían vacíos, porque Postgres rechaza '' en una columna date (ése
+// era el bug: se marcaba "Ganada" pero la venta no se creaba). El resto
+// se completa después en el módulo de Ventas.
+async function crearVentaGanada(op) {
+  const venta = await crear('ventas', {
+    oportunidad_id: op.id,
+    cliente_id: op.cliente_id,
+    vendedor_id: op.vendedor_id,
+    fecha_ganada: hoyISO(),
+    estado: 'Ganada',
+  });
+  await comentarSistema('op', op.id, 'Oportunidad ganada. Se creó la venta enlazada.');
+  return venta.id;
 }
 
 // ============================================================
@@ -170,8 +178,13 @@ export async function avanzarEtapa(op, hacia, valores, ctx) {
     if (req.camposOp) camposOp = { ...camposOp, ...req.camposOp(valores) };
   }
 
+  // Si se gana, la venta se crea ANTES de marcar la oportunidad: así, si
+  // el insert falla, la oportunidad no queda "ganada" sin venta.
+  let ventaId;
+  if (camposOp.resultado === 'Ganada') ventaId = await crearVentaGanada(op);
+
   await actualizar('oportunidades', op.id, { etapa: hacia, ...camposOp });
-  const ventaId = await efectosCierre(op, camposOp);
+  await efectosCierre(op, camposOp);
   return { ok: true, ventaId };
 }
 
@@ -187,7 +200,28 @@ export async function completarEtapa(op, etapa, valores, ctx) {
   const req = REQUISITOS[etapa];
   if (req.crearRegistro) await req.crearRegistro(op, valores, ctx);
   const camposOp = req.camposOp ? req.camposOp(valores) : {};
+
+  let ventaId;
+  if (camposOp.resultado === 'Ganada') ventaId = await crearVentaGanada(op);
+
   await actualizar('oportunidades', op.id, { etapa: etapaMax(op.etapa, etapa), ...camposOp });
-  const ventaId = await efectosCierre(op, camposOp);
+  await efectosCierre(op, camposOp);
   return { ok: true, ventaId };
+}
+
+// ============================================================
+// RECONTACTO (reabrir una oportunidad perdida)
+// ------------------------------------------------------------
+// Devuelve la oportunidad a Contacto inicial y limpia el resultado,
+// SIN borrar cotizaciones ni seguimientos: los registros previos
+// quedan como historial. Al re-avanzar, esos datos ya cuentan, así
+// que si querés mandar una cotización nueva usá "+ Cotización".
+// ============================================================
+export async function reabrirOportunidad(op) {
+  await actualizar('oportunidades', op.id, {
+    etapa: 'Contacto inicial', resultado: '', motivo: '', motivo_detalle: '',
+  });
+  await comentarSistema('op', op.id,
+    'Oportunidad recontactada: vuelve a Contacto inicial. Se conservan las cotizaciones y seguimientos previos.');
+  return { ok: true };
 }

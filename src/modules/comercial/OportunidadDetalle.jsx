@@ -6,7 +6,7 @@ import Comentarios from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import Icon from '../../shared/Icon.jsx';
-import { ETAPAS, REQUISITOS, camposFaltantes, completarEtapa, avanzarEtapa } from './etapas.js';
+import { ETAPAS, REQUISITOS, camposFaltantes, completarEtapa, avanzarEtapa, reabrirOportunidad } from './etapas.js';
 
 export default function OportunidadDetalle() {
   const { id } = useParams();
@@ -87,6 +87,17 @@ export default function OportunidadDetalle() {
     }
   }
 
+  async function recontactar() {
+    try {
+      await reabrirOportunidad(op);
+      toast('Oportunidad reabierta en Contacto inicial');
+      await cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo reabrir la oportunidad', 'err');
+    }
+  }
+
   const motivoPerdida = op.motivo === 'Otro' ? (op.motivo_detalle || 'Otro') : op.motivo;
 
   return (
@@ -110,9 +121,15 @@ export default function OportunidadDetalle() {
       </div>
 
       {cerrada && (
-        <div className={'aviso ' + (op.resultado === 'Ganada' ? 'ok' : 'bad')}>
-          Oportunidad cerrada como <b style={{ margin: '0 4px' }}>{op.resultado}</b>
-          {op.resultado === 'Perdida' && motivoPerdida && ` · motivo: ${motivoPerdida}`}
+        <div className={'aviso ' + (op.resultado === 'Ganada' ? 'ok' : 'bad')}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span className="grow">
+            Oportunidad cerrada como <b>{op.resultado}</b>
+            {op.resultado === 'Perdida' && motivoPerdida && ` · motivo: ${motivoPerdida}`}
+          </span>
+          {op.resultado === 'Perdida' && (
+            <button className="btn ghost sm" onClick={recontactar}>Recontactar</button>
+          )}
         </div>
       )}
 
