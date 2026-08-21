@@ -42,7 +42,7 @@ export const REQUISITOS = {
   },
 
   'Cotización': {
-    cumplido: (ctx) => (ctx.cotizaciones?.length || 0) > 0,
+    cumplido: (ctx, op) => delIntento(ctx.cotizaciones, op).length > 0,
     campos: [
       // Guardamos SOLO un número de referencia (no el archivo) para no
       // cargar peso a la base. El PDF vive donde el vendedor lo tenga.
@@ -51,9 +51,11 @@ export const REQUISITOS = {
       { name: 'coti_fecha', label: 'Fecha de envío', type: 'date', required: true, default: hoyISO() },
     ],
     crearRegistro: async (op, valores, ctx) => {
-      const version = (ctx.cotizaciones?.length || 0) + 1;
+      const intento = op.intento || 1;
+      const version = delIntento(ctx.cotizaciones, op).length + 1; // versión dentro del intento
       await crear('cotizaciones', {
         oportunidad_id: op.id,
+        intento,
         version,
         pdf: valores.coti_ref,
         fecha_envio: valores.coti_fecha || hoyISO(),
@@ -62,7 +64,7 @@ export const REQUISITOS = {
   },
 
   'Seguimiento': {
-    cumplido: (ctx) => (ctx.seguimientos?.length || 0) > 0,
+    cumplido: (ctx, op) => delIntento(ctx.seguimientos, op).length > 0,
     campos: [
       { name: 'seg_tipo', label: 'Tipo de contacto', type: 'select', required: true,
         options: ['Llamada', 'Email', 'WhatsApp', 'Reunión', 'Visita'] },
@@ -74,6 +76,7 @@ export const REQUISITOS = {
     crearRegistro: async (op, valores) => {
       await crear('seguimientos', {
         oportunidad_id: op.id,
+        intento: op.intento || 1,
         tipo: valores.seg_tipo,
         fecha: valores.seg_fecha || hoyISO(),
         observaciones: valores.seg_obs,
@@ -114,6 +117,9 @@ const idx = (etapa) => ETAPAS.indexOf(etapa);
 function etapaMax(a, b) {
   return ETAPAS[Math.max(idx(a), idx(b))] || b;
 }
+// Registros del intento (ciclo) actual de la oportunidad. Los de
+// intentos anteriores quedaron como historial tras un recontacto.
+const delIntento = (lista, op) => (lista || []).filter((r) => (r.intento || 1) === (op?.intento || 1));
 
 // Campos que faltan para que `op` llegue a la etapa `hacia`.
 // Recorre todas las etapas intermedias no cumplidas y junta sus
@@ -210,18 +216,32 @@ export async function completarEtapa(op, etapa, valores, ctx) {
 }
 
 // ============================================================
-// RECONTACTO (reabrir una oportunidad perdida)
+// RECONTACTO (reabrir una oportunidad perdida) — arranca de cero
 // ------------------------------------------------------------
-// Devuelve la oportunidad a Contacto inicial y limpia el resultado,
-// SIN borrar cotizaciones ni seguimientos: los registros previos
-// quedan como historial. Al re-avanzar, esos datos ya cuentan, así
-// que si querés mandar una cotización nueva usá "+ Cotización".
+// Guarda cómo cerró el intento actual (resultado + motivo) en
+// intentos_comercial, sube el contador `intento` de la oportunidad
+// y la devuelve a Contacto inicial. Las cotizaciones y seguimientos
+// del intento anterior NO se borran: quedan con su número de intento
+// y pasan a ser historial. Como el sistema solo cuenta el intento
+// actual, el ciclo nuevo vuelve a pedir todo desde cero.
 // ============================================================
 export async function reabrirOportunidad(op) {
+  const intentoCerrado = op.intento || 1;
+  // 1) Snapshot del cierre para conservar el "qué pasó".
+  await crear('intentos_comercial', {
+    oportunidad_id: op.id,
+    intento: intentoCerrado,
+    resultado: op.resultado || '',
+    motivo: op.motivo || '',
+    motivo_detalle: op.motivo_detalle || '',
+  });
+  // 2) Nuevo ciclo: sube el contador y limpia el resultado/etapa.
   await actualizar('oportunidades', op.id, {
-    etapa: 'Contacto inicial', resultado: '', motivo: '', motivo_detalle: '',
+    intento: intentoCerrado + 1,
+    etapa: 'Contacto inicial',
+    resultado: '', motivo: '', motivo_detalle: '',
   });
   await comentarSistema('op', op.id,
-    'Oportunidad recontactada: vuelve a Contacto inicial. Se conservan las cotizaciones y seguimientos previos.');
+    `Recontacto: se cierra el intento ${intentoCerrado} y arranca uno nuevo desde Contacto inicial. Los registros anteriores quedan como historial.`);
   return { ok: true };
 }

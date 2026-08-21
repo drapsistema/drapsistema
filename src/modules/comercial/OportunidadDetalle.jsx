@@ -16,6 +16,7 @@ export default function OportunidadDetalle() {
   const [cliente, setCliente] = useState(null);
   const [cotizaciones, setCotizaciones] = useState([]);
   const [seguimientos, setSeguimientos] = useState([]);
+  const [intentos, setIntentos] = useState([]); // cierres de intentos anteriores
   const [venta, setVenta] = useState(null);
   const [accion, setAccion] = useState(null); // 'coti' | 'seg' | 'cierre' | null
 
@@ -27,9 +28,13 @@ export default function OportunidadDetalle() {
     if (o) {
       setCliente(await obtener('clientes', o.cliente_id));
       setCotizaciones((await listar('cotizaciones', { oportunidad_id: Number(id) }))
-        .sort((a, b) => b.version - a.version));
+        .sort((a, b) => (a.intento || 1) - (b.intento || 1) || b.version - a.version));
       setSeguimientos((await listar('seguimientos', { oportunidad_id: Number(id) }))
         .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')));
+      try {
+        setIntentos((await listar('intentos_comercial', { oportunidad_id: Number(id) }))
+          .sort((a, b) => a.intento - b.intento));
+      } catch { setIntentos([]); } // por si aún no se corrió el SQL / modo demo
       const vs = await listar('ventas', { oportunidad_id: Number(id) });
       setVenta(vs[0] || null);
     }
@@ -41,9 +46,23 @@ export default function OportunidadDetalle() {
   const idxEtapa = ETAPAS.indexOf(op.etapa);
   const ctx = { cotizaciones, seguimientos };
 
-  // Configuración de cada modal de acción. El cierre pide, además del
-  // resultado, todo lo que falte para poder cerrar (misma lógica que
-  // arrastrar la tarjeta hasta Cierre).
+  // --- Separar el ciclo vigente del historial ---
+  const intentoActual = op.intento || 1;
+  const esActual = (r) => (r.intento || 1) === intentoActual;
+  const cotisActuales = cotizaciones.filter(esActual);
+  const segsActuales = seguimientos.filter(esActual);
+
+  // Armar el historial: para cada intento anterior, su cierre + registros.
+  const historial = [];
+  for (let n = intentoActual - 1; n >= 1; n--) {
+    historial.push({
+      n,
+      cierre: intentos.find((i) => i.intento === n) || null,
+      cotis: cotizaciones.filter((c) => (c.intento || 1) === n),
+      segs: seguimientos.filter((s) => (s.intento || 1) === n),
+    });
+  }
+
   const ACCIONES = {
     coti: {
       titulo: 'Agregar cotización',
@@ -103,7 +122,7 @@ export default function OportunidadDetalle() {
   return (
     <div>
       <PageHeader titulo={`Oportunidad #${op.id} · ${nombreCliente(cliente)}`}
-        sub={`Etapa: ${op.etapa} · primer contacto ${fmtFecha(op.fecha_contacto)}`}>
+        sub={`Etapa: ${op.etapa}${intentoActual > 1 ? ` · intento ${intentoActual}` : ''} · primer contacto ${fmtFecha(op.fecha_contacto)}`}>
         <BackButton to="/comercial" />
         {!cerrada && <>
           <button className="btn ghost" onClick={() => setAccion('coti')}>+ Cotización</button>
@@ -133,19 +152,25 @@ export default function OportunidadDetalle() {
         </div>
       )}
 
+      {intentoActual > 1 && !cerrada && (
+        <div className="aviso">
+          Este es el <b>intento {intentoActual}</b> de contacto. Abajo podés ver el historial de los intentos anteriores.
+        </div>
+      )}
+
       <div className="two" style={{ marginTop: 16 }}>
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-h">
-              <span className="grow">Cotizaciones ({cotizaciones.length})</span>
+              <span className="grow">Cotizaciones ({cotisActuales.length})</span>
               {!cerrada && <button className="btn ghost sm" onClick={() => setAccion('coti')}>+ Agregar</button>}
             </div>
             <div className="table-wrap">
-              {cotizaciones.length === 0 ? <Empty>Sin cotizaciones.</Empty> : (
+              {cotisActuales.length === 0 ? <Empty>Sin cotizaciones en este intento.</Empty> : (
                 <table>
                   <thead><tr><th>Versión</th><th>Referencia</th><th>Envío</th><th>Días</th></tr></thead>
                   <tbody>
-                    {cotizaciones.map((c) => (
+                    {cotisActuales.map((c) => (
                       <tr key={c.id}>
                         <td className="strong">v{c.version}</td>
                         <td><span className="badge b">{c.pdf}</span></td>
@@ -161,12 +186,12 @@ export default function OportunidadDetalle() {
 
           <div className="card">
             <div className="card-h">
-              <span className="grow">Seguimientos ({seguimientos.length})</span>
+              <span className="grow">Seguimientos ({segsActuales.length})</span>
               {!cerrada && <button className="btn ghost sm" onClick={() => setAccion('seg')}>+ Registrar</button>}
             </div>
             <div className="card-pad">
-              {seguimientos.length === 0 ? <div className="muted sm">Sin seguimientos.</div> :
-                seguimientos.map((s) => (
+              {segsActuales.length === 0 ? <div className="muted sm">Sin seguimientos en este intento.</div> :
+                segsActuales.map((s) => (
                   <div key={s.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--line-2)' }}>
                     <div className="strong sm">{fmtFecha(s.fecha)} · {s.tipo}</div>
                     <div className="muted sm">{s.observaciones}</div>
@@ -178,6 +203,8 @@ export default function OportunidadDetalle() {
             </div>
           </div>
 
+          {historial.length > 0 && <HistorialIntentos historial={historial} />}
+
           <Comentarios entidad="op" refId={op.id} />
         </div>
 
@@ -187,6 +214,7 @@ export default function OportunidadDetalle() {
             <div className="card-pad">
               <InfoRow k="Cliente" v={nombreCliente(cliente)} />
               <InfoRow k="Etapa" v={op.etapa} />
+              {intentoActual > 1 && <InfoRow k="Intento actual" v={`#${intentoActual}`} />}
               <InfoRow k="Primer contacto" v={fmtFecha(op.fecha_contacto)} />
               <InfoRow k="Relevamiento" v={op.relevamiento} />
               {venta && <InfoRow k="Venta" v={<a onClick={() => navigate(`/ventas/${venta.id}`)}>VT-{String(venta.id).padStart(4, '0')} →</a>} />}
@@ -205,6 +233,63 @@ export default function OportunidadDetalle() {
           onCancel={() => setAccion(null)}
         />
       )}
+    </div>
+  );
+}
+
+// Historial de intentos anteriores, en tono apagado para diferenciarlo
+// visualmente del proceso vigente. Deja ver qué se cotizó, qué se habló
+// y cómo cerró cada intento previo.
+function HistorialIntentos({ historial }) {
+  return (
+    <div className="card" style={{ marginTop: 16, background: 'var(--panel-2)', borderStyle: 'dashed' }}>
+      <div className="card-h">
+        <span className="grow">Intentos anteriores ({historial.length})</span>
+        <span className="badge">Historial</span>
+      </div>
+      <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {historial.map((h) => {
+          const motivo = h.cierre
+            ? (h.cierre.motivo === 'Otro' ? (h.cierre.motivo_detalle || 'Otro') : h.cierre.motivo)
+            : null;
+          return (
+            <div key={h.n} style={{
+              border: '1px solid var(--line-2)', borderRadius: 10,
+              padding: '10px 12px', background: 'var(--panel)', opacity: .92,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                <span className="strong sm">Intento {h.n}</span>
+                {h.cierre && (
+                  <span className={'badge ' + (h.cierre.resultado === 'Ganada' ? 'ok' : 'bad')}>
+                    {h.cierre.resultado || 'Cerrado'}
+                  </span>
+                )}
+                {motivo && <span className="muted sm">motivo: {motivo}</span>}
+                {h.cierre?.cerrado_en && (
+                  <span className="muted sm" style={{ marginLeft: 'auto' }}>{fmtFecha(h.cierre.cerrado_en)}</span>
+                )}
+              </div>
+
+              {h.cotis.length > 0 && (
+                <div className="muted sm" style={{ marginBottom: 4 }}>
+                  Cotizaciones: {h.cotis.map((c) => `v${c.version} (${c.pdf})`).join(' · ')}
+                </div>
+              )}
+              {h.segs.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {h.segs.map((s) => (
+                    <div key={s.id} className="muted sm">
+                      {fmtFecha(s.fecha)} · {s.tipo}: {s.observaciones}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                h.cotis.length === 0 && <div className="muted sm">Sin registros en este intento.</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
