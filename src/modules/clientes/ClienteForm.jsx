@@ -1,15 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { crear, obtener, actualizar, listar } from '../../lib/db';
-import { PageHeader, BackButton } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, nombreCliente } from '../../shared/ui.jsx';
 import { usuariosConRolPrefijo, esAdministrador } from '../../shared/permisos';
 import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 const VACIO = {
-  tipo: 'Empresa', razon_social: '', nombre: '', apellido: '', cuit: '',
+  tipo: 'Persona jurídica', razon_social: '', nombre: '', apellido: '', cuit: '',
   domicilio: '', telefono: '', mail: '', observaciones: '', vendedor_id: '', activo: true,
 };
+
+// Helpers de formato/validación.
+const soloNumeros = (s) => (s || '').replace(/\D/g, '');
+const mailValido = (m) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m);
+// Normaliza tipos viejos ('Empresa', 'Sociedad') al binario actual.
+const normalizarTipo = (t) => (t === 'Persona física' ? 'Persona física' : 'Persona jurídica');
 
 export default function ClienteForm() {
   const { id } = useParams();
@@ -19,21 +25,38 @@ export default function ClienteForm() {
   const [vendedores, setVendedores] = useState([]);
   const [errores, setErrores] = useState({});
   const [guardando, setGuardando] = useState(false);
+  const [duplicado, setDuplicado] = useState(null); // cliente existente con el mismo CUIT
+
+  const { perfil, usuarioActualId } = useAuth();
 
   useEffect(() => {
     listar('usuarios').then((us) =>
       setVendedores(usuariosConRolPrefijo(us, 'Vendedor'))
     );
     if (editando) {
-      obtener('clientes', id).then((c) => c && setForm(c));
+      obtener('clientes', id).then((c) => c && setForm({ ...c, tipo: normalizarTipo(c.tipo) }));
     }
   }, [id, editando]);
 
-  const { perfil, usuarioActualId } = useAuth();
+  // Chequeo automático de CUIT duplicado (con debounce). Solo avisa: no
+  // bloquea el alta. Si RLS oculta clientes de otros vendedores, el aviso
+  // solo detecta duplicados dentro de lo que el usuario puede ver.
+  useEffect(() => {
+    const cuit = form.cuit;
+    if (!cuit || cuit.length !== 11) { setDuplicado(null); return; }
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      try {
+        const encontrados = await listar('clientes', { cuit });
+        const otro = encontrados.find((c) => String(c.id) !== String(id));
+        if (!cancelado) setDuplicado(otro || null);
+      } catch { if (!cancelado) setDuplicado(null); }
+    }, 400);
+    return () => { cancelado = true; clearTimeout(t); };
+  }, [form.cuit, id]);
 
   const set = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
 
-  // Campos obligatorios según el tipo de cliente.
   function validar() {
     const e = {};
     if (form.tipo === 'Persona física') {
@@ -42,9 +65,10 @@ export default function ClienteForm() {
     } else {
       if (!form.razon_social) e.razon_social = true;
     }
-    if (!form.cuit) e.cuit = true;
+    if (!form.cuit || form.cuit.length !== 11) e.cuit = true;
     if (!form.domicilio) e.domicilio = true;
     if (!form.telefono) e.telefono = true;
+    if (form.mail && !mailValido(form.mail)) e.mail = true;
     setErrores(e);
     return Object.keys(e).length === 0;
   }
@@ -54,12 +78,15 @@ export default function ClienteForm() {
     setGuardando(true);
     try {
       let vendedor_id = form.vendedor_id ? Number(form.vendedor_id) : null;
-      // Si un vendedor (no admin) crea un cliente sin elegir vendedor, se lo
-      // auto-asigna. Así el cliente queda a su nombre y RLS lo permite.
       if (!editando && !esAdministrador(perfil) && !vendedor_id) {
         vendedor_id = usuarioActualId;
       }
+      // Limpiamos los campos del tipo que no corresponde, para no dejar
+      // datos colgados (ej: razon_social en una persona física).
       const datos = { ...form, vendedor_id };
+      if (form.tipo === 'Persona física') { datos.razon_social = ''; }
+      else { datos.nombre = ''; datos.apellido = ''; }
+
       if (editando) {
         await actualizar('clientes', id, datos);
         navigate(`/clientes/${id}`);
@@ -76,27 +103,50 @@ export default function ClienteForm() {
   }
 
   const esPF = form.tipo === 'Persona física';
+  const cuitCorto = form.cuit && form.cuit.length !== 11;
 
   return (
     <div>
       <PageHeader
         titulo={editando ? 'Editar cliente' : 'Nuevo cliente'}
-        sub="Los campos varían según el tipo de cliente"
+        sub="Empezá por el CUIT: el sistema chequea que no esté duplicado"
       >
         <BackButton to={editando ? `/clientes/${id}` : '/clientes'} />
       </PageHeader>
 
       <div className="card card-pad" style={{ maxWidth: 720 }}>
         <div className="form-grid">
+          {/* CUIT primero */}
+          <div className="field">
+            <label>CUIT <span className="req">*</span></label>
+            <input value={form.cuit} inputMode="numeric" autoFocus
+              onChange={(e) => set('cuit', soloNumeros(e.target.value).slice(0, 11))}
+              placeholder="11 dígitos, sin guiones"
+              style={errores.cuit ? { borderColor: 'var(--red)' } : undefined} />
+            {cuitCorto && <div className="hint" style={{ color: 'var(--red)' }}>El CUIT debe tener 11 dígitos.</div>}
+          </div>
+
           <div className="field">
             <label>Tipo de cliente <span className="req">*</span></label>
             <select value={form.tipo} onChange={(e) => set('tipo', e.target.value)}>
-              <option>Empresa</option>
+              <option>Persona jurídica</option>
               <option>Persona física</option>
-              <option>Sociedad</option>
             </select>
           </div>
-          <div className="field" />
+
+          {/* Aviso de duplicado (solo avisa, no bloquea) */}
+          {duplicado && (
+            <div className="field full">
+              <div className="aviso bad" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span className="grow">
+                  Ya existe un cliente con este CUIT: <b>{nombreCliente(duplicado)}</b>.
+                </span>
+                <button className="btn ghost sm" onClick={() => navigate(`/clientes/${duplicado.id}`)}>
+                  Ver ficha →
+                </button>
+              </div>
+            </div>
+          )}
 
           {esPF ? (
             <>
@@ -119,18 +169,6 @@ export default function ClienteForm() {
             </div>
           )}
 
-          <div className="field">
-            <label>CUIT <span className="req">*</span></label>
-            <input value={form.cuit} onChange={(e) => set('cuit', e.target.value)}
-              placeholder="30-71234567-9"
-              style={errores.cuit ? { borderColor: 'var(--red)' } : undefined} />
-          </div>
-          <div className="field">
-            <label>Teléfono <span className="req">*</span></label>
-            <input value={form.telefono} onChange={(e) => set('telefono', e.target.value)}
-              style={errores.telefono ? { borderColor: 'var(--red)' } : undefined} />
-          </div>
-
           <div className="field full">
             <label>Domicilio fiscal <span className="req">*</span></label>
             <input value={form.domicilio} onChange={(e) => set('domicilio', e.target.value)}
@@ -138,9 +176,20 @@ export default function ClienteForm() {
           </div>
 
           <div className="field">
-            <label>Mail</label>
-            <input value={form.mail} onChange={(e) => set('mail', e.target.value)} />
+            <label>Teléfono <span className="req">*</span></label>
+            <input value={form.telefono} inputMode="numeric"
+              onChange={(e) => set('telefono', soloNumeros(e.target.value))}
+              placeholder="Solo números"
+              style={errores.telefono ? { borderColor: 'var(--red)' } : undefined} />
           </div>
+          <div className="field">
+            <label>Mail</label>
+            <input value={form.mail} type="email" onChange={(e) => set('mail', e.target.value)}
+              placeholder="tu@empresa.com"
+              style={errores.mail ? { borderColor: 'var(--red)' } : undefined} />
+            {errores.mail && <div className="hint" style={{ color: 'var(--red)' }}>Formato de mail inválido.</div>}
+          </div>
+
           <div className="field">
             <label>Vendedor asignado</label>
             {esAdministrador(perfil) ? (
@@ -156,6 +205,7 @@ export default function ClienteForm() {
               </>
             )}
           </div>
+          <div className="field" />
 
           <div className="field full">
             <label>Observaciones</label>
