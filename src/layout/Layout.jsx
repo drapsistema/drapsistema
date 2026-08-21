@@ -39,7 +39,7 @@ export default function Layout() {
     <div className="layout">
       <aside className={'sidebar' + (menuAbierto ? ' open' : '')}>
         <div className="sidebar-brand">
-          <div className="sidebar-logo">D</div>
+          <img className="sidebar-logo" src="/drap-mark.png" alt="DRAP" />
           <div>
             <b>DRAP</b>
             <div className="sub">Gestión integral</div>
