@@ -1,61 +1,57 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { crear, obtener, actualizar, listar } from '../../lib/db';
-import { PageHeader, BackButton, nombreCliente } from '../../shared/ui.jsx';
-import { usuariosConRolPrefijo, esAdministrador } from '../../shared/permisos';
+import { crear, obtener, actualizar, clientePorCuit } from '../../lib/db';
+import { PageHeader, BackButton } from '../../shared/ui.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 const VACIO = {
   tipo: 'Persona jurídica', razon_social: '', nombre: '', apellido: '', cuit: '',
-  domicilio: '', telefono: '', mail: '', observaciones: '', vendedor_id: '', activo: true,
+  domicilio: '', telefono: '', mail: '', observaciones: '', activo: true,
 };
 
 // Helpers de formato/validación.
 const soloNumeros = (s) => (s || '').replace(/\D/g, '');
 const mailValido = (m) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m);
-// Normaliza tipos viejos ('Empresa', 'Sociedad') al binario actual.
 const normalizarTipo = (t) => (t === 'Persona física' ? 'Persona física' : 'Persona jurídica');
 
 export default function ClienteForm() {
   const { id } = useParams();
   const editando = Boolean(id);
   const navigate = useNavigate();
+  const { usuarioActualId } = useAuth();
   const [form, setForm] = useState(VACIO);
-  const [vendedores, setVendedores] = useState([]);
   const [errores, setErrores] = useState({});
   const [guardando, setGuardando] = useState(false);
-  const [duplicado, setDuplicado] = useState(null); // cliente existente con el mismo CUIT
-
-  const { perfil, usuarioActualId } = useAuth();
+  const [duplicado, setDuplicado] = useState(null); // { cliente_id, es_propio, puede_ver, nombre }
 
   useEffect(() => {
-    listar('usuarios').then((us) =>
-      setVendedores(usuariosConRolPrefijo(us, 'Vendedor'))
-    );
     if (editando) {
       obtener('clientes', id).then((c) => c && setForm({ ...c, tipo: normalizarTipo(c.tipo) }));
     }
   }, [id, editando]);
 
-  // Chequeo automático de CUIT duplicado (con debounce). Solo avisa: no
-  // bloquea el alta. Si RLS oculta clientes de otros vendedores, el aviso
-  // solo detecta duplicados dentro de lo que el usuario puede ver.
+  // Chequeo automático de CUIT duplicado (con debounce). Corre contra
+  // TODOS los clientes vía la función global, más allá de RLS.
   useEffect(() => {
     const cuit = form.cuit;
     if (!cuit || cuit.length !== 11) { setDuplicado(null); return; }
     let cancelado = false;
     const t = setTimeout(async () => {
       try {
-        const encontrados = await listar('clientes', { cuit });
-        const otro = encontrados.find((c) => String(c.id) !== String(id));
-        if (!cancelado) setDuplicado(otro || null);
+        const r = await clientePorCuit(cuit);
+        // Si estoy editando este mismo cliente, no es un duplicado.
+        if (r && editando && String(r.cliente_id) === String(id)) { if (!cancelado) setDuplicado(null); return; }
+        if (!cancelado) setDuplicado(r || null);
       } catch { if (!cancelado) setDuplicado(null); }
     }, 400);
     return () => { cancelado = true; clearTimeout(t); };
-  }, [form.cuit, id]);
+  }, [form.cuit, id, editando]);
 
   const set = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
+
+  // Un vendedor no puede crear un cliente que ya existe y es de otro.
+  const bloqueadoPorDuplicado = !editando && duplicado && !duplicado.puede_ver;
 
   function validar() {
     const e = {};
@@ -74,16 +70,12 @@ export default function ClienteForm() {
   }
 
   async function guardar() {
+    if (bloqueadoPorDuplicado) return; // no se puede crear un cliente de otro
     if (!validar()) return;
     setGuardando(true);
     try {
-      let vendedor_id = form.vendedor_id ? Number(form.vendedor_id) : null;
-      if (!editando && !esAdministrador(perfil) && !vendedor_id) {
-        vendedor_id = usuarioActualId;
-      }
-      // Limpiamos los campos del tipo que no corresponde, para no dejar
-      // datos colgados (ej: razon_social en una persona física).
-      const datos = { ...form, vendedor_id };
+      // Limpiamos el campo del tipo que no corresponde.
+      const datos = { ...form };
       if (form.tipo === 'Persona física') { datos.razon_social = ''; }
       else { datos.nombre = ''; datos.apellido = ''; }
 
@@ -91,7 +83,9 @@ export default function ClienteForm() {
         await actualizar('clientes', id, datos);
         navigate(`/clientes/${id}`);
       } else {
-        const nuevo = await crear('clientes', datos);
+        // El cliente NO lleva vendedor asignado: eso se define al crear
+        // oportunidades. Solo registramos quién lo cargó.
+        const nuevo = await crear('clientes', { ...datos, creado_por: usuarioActualId });
         navigate(`/clientes/${nuevo.id}`);
       }
     } catch (err) {
@@ -109,7 +103,7 @@ export default function ClienteForm() {
     <div>
       <PageHeader
         titulo={editando ? 'Editar cliente' : 'Nuevo cliente'}
-        sub="Empezá por el CUIT: el sistema chequea que no esté duplicado"
+        sub="Empezá por el CUIT: el sistema chequea que no exista ya"
       >
         <BackButton to={editando ? `/clientes/${id}` : '/clientes'} />
       </PageHeader>
@@ -134,17 +128,23 @@ export default function ClienteForm() {
             </select>
           </div>
 
-          {/* Aviso de duplicado (solo avisa, no bloquea) */}
+          {/* Aviso de duplicado según quién esté cargando */}
           {duplicado && (
             <div className="field full">
-              <div className="aviso bad" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span className="grow">
-                  Ya existe un cliente con este CUIT: <b>{nombreCliente(duplicado)}</b>.
-                </span>
-                <button className="btn ghost sm" onClick={() => navigate(`/clientes/${duplicado.id}`)}>
-                  Ver ficha →
-                </button>
-              </div>
+              {duplicado.puede_ver ? (
+                <div className="aviso bad" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span className="grow">
+                    Ya existe un cliente con este CUIT{duplicado.nombre ? <>: <b>{duplicado.nombre}</b></> : ''}.
+                  </span>
+                  <button className="btn ghost sm" onClick={() => navigate(`/clientes/${duplicado.cliente_id}`)}>
+                    Ver ficha →
+                  </button>
+                </div>
+              ) : (
+                <div className="aviso bad">
+                  Este cliente ya existe y está asignado a otro vendedor. Contactate con un administrador para resolverlo.
+                </div>
+              )}
             </div>
           )}
 
@@ -190,30 +190,13 @@ export default function ClienteForm() {
             {errores.mail && <div className="hint" style={{ color: 'var(--red)' }}>Formato de mail inválido.</div>}
           </div>
 
-          <div className="field">
-            <label>Vendedor asignado</label>
-            {esAdministrador(perfil) ? (
-              <select value={form.vendedor_id || ''} onChange={(e) => set('vendedor_id', e.target.value)}>
-                <option value="">— Sin asignar —</option>
-                {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
-              </select>
-            ) : (
-              <>
-                <input value={vendedores.find((v) => v.id === form.vendedor_id)?.nombre || 'Vos'} disabled
-                  style={{ background: 'var(--panel-2)', color: 'var(--ink-3)' }} />
-                <div className="hint">Solo un administrador puede reasignar el vendedor.</div>
-              </>
-            )}
-          </div>
-          <div className="field" />
-
           <div className="field full">
             <label>Observaciones</label>
             <textarea rows={2} value={form.observaciones} onChange={(e) => set('observaciones', e.target.value)} />
           </div>
         </div>
 
-        <button className="btn full" onClick={guardar} disabled={guardando}>
+        <button className="btn full" onClick={guardar} disabled={guardando || bloqueadoPorDuplicado}>
           <Icon name="check" size={16} /> {guardando ? 'Guardando…' : (editando ? 'Guardar cambios' : 'Crear cliente')}
         </button>
       </div>

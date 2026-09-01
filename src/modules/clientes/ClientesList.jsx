@@ -1,30 +1,28 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listar, obtener } from '../../lib/db';
+import { listar } from '../../lib/db';
 import { PageHeader, Empty, nombreCliente } from '../../shared/ui.jsx';
-import { filtrarPorAlcance } from '../../shared/permisos';
-import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 export default function ClientesList() {
   const [clientes, setClientes] = useState([]);
   const [cargando, setCargando] = useState(true);
   const navigate = useNavigate();
-  const { perfil } = useAuth();
 
   useEffect(() => {
-    Promise.all([listar('clientes'), obtener('configuracion', 1)])
-      .then(([data, cfg]) => {
-        const activos = data.filter((c) => c.activo !== false);
-        setClientes(filtrarPorAlcance(activos, perfil, cfg, 'vendedor_id'));
-      })
+    // La visibilidad la resuelve RLS en la base (admin ve todos; un
+    // vendedor ve los que cargó él y aquellos con oportunidad abierta).
+    // Por eso ya NO filtramos por vendedor_id del lado del cliente:
+    // los clientes no llevan vendedor asignado.
+    listar('clientes')
+      .then((data) => setClientes(data.filter((c) => c.activo !== false)))
       .catch((e) => console.error('Error al listar clientes:', e))
       .finally(() => setCargando(false));
-  }, [perfil]);
+  }, []);
 
   return (
     <div>
-      <PageHeader titulo="Clientes" sub={`${clientes.length} clientes registrados`}>
+      <PageHeader titulo="Clientes" sub={`${clientes.length} clientes visibles`}>
         <button className="btn" onClick={() => navigate('/clientes/nuevo')}>
           <Icon name="plus" size={16} /> Nuevo cliente
         </button>
