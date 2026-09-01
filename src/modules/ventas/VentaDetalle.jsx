@@ -3,12 +3,31 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, crear, actualizar } from '../../lib/db';
 import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
+import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 // Hitos de postventa y días desde la entrega.
 const HITOS = [{ hito: '1 semana', dias: 7 }, { hito: '1 mes', dias: 30 }, { hito: '2 meses', dias: 60 }];
+
+// Campos de cada equipo cargado en la venta. Solo "Equipo" es obligatorio;
+// el resto se completa a medida que se tienen los datos.
+const CAMPOS_EQUIPO = [
+  { name: 'equipo', label: 'Equipo', type: 'text', required: true, placeholder: 'Ej: DJI Agras T50' },
+  { name: 'ns_dron', label: 'N° de serie de dron', type: 'text' },
+  { name: 'fecha_activacion', label: 'Fecha de activación', type: 'date' },
+  { name: 'ns_caja_dron', label: 'NS caja de dron', type: 'text' },
+  { name: 'ns_caja_tanque', label: 'NS caja tanque de líquidos', type: 'text' },
+  { name: 'ns_baterias', label: 'N° serie baterías', type: 'text' },
+  { name: 'ns_hub', label: 'N° serie HUB', type: 'text' },
+  { name: 'ns_wb37', label: 'N° serie WB37', type: 'text' },
+  { name: 'ns_100w', label: 'N° serie 100W', type: 'text' },
+  { name: 'ns_core_board', label: 'N° serie core board control', type: 'text' },
+  { name: 'ns_generador', label: 'N° serie generador', type: 'text' },
+  { name: 'localidad', label: 'Localidad', type: 'text' },
+  { name: 'mail', label: 'Mail', type: 'text' },
+];
 
 export default function VentaDetalle() {
   const { id } = useParams();
@@ -18,6 +37,7 @@ export default function VentaDetalle() {
   const [cliente, setCliente] = useState(null);
   const [productos, setProductos] = useState([]);
   const [form, setForm] = useState({ direccion_entrega: '', fecha_entrega: '' });
+  const [equipoModal, setEquipoModal] = useState(null); // {} nuevo | producto (editar) | null
   const [motivoCancel, setMotivoCancel] = useState('');
   const [confirmaNombre, setConfirmaNombre] = useState('');
   const { esAdmin, usuarioActualId } = useAuth();
@@ -40,10 +60,24 @@ export default function VentaDetalle() {
   const cancelada = venta.estado === 'Cancelada';
   const puedeCancelar = !entregada && !cancelada && esAdmin;
 
-  async function agregarProducto() {
-    await crear('productos', { venta_id: Number(id), modelo: 'Nuevo equipo', nro_serie: '', activado: false, alta_dji: false, garantia: '' });
-    toast('Equipo agregado · editá sus datos');
-    cargar();
+  async function guardarEquipo(valores) {
+    const datos = { ...valores };
+    // La fecha de activación es columna date: '' la rechaza Postgres, va null.
+    if (!datos.fecha_activacion) datos.fecha_activacion = null;
+    datos.activado = Boolean(datos.fecha_activacion);
+    try {
+      if (equipoModal && equipoModal.id) {
+        await actualizar('productos', equipoModal.id, datos);
+      } else {
+        await crear('productos', { venta_id: Number(id), ...datos });
+      }
+      setEquipoModal(null);
+      toast('Equipo guardado');
+      cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo guardar el equipo', 'err');
+    }
   }
 
   async function guardarEntrega() {
@@ -113,23 +147,28 @@ export default function VentaDetalle() {
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-h">
               <span className="grow">Productos activados ({productos.length})</span>
-              {!cancelada && <button className="btn ghost sm" onClick={agregarProducto}>+ Equipo</button>}
+              {!cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal({})}>+ Equipo</button>}
             </div>
-            <div className="table-wrap">
-              {productos.length === 0 ? <Empty>Sin equipos.</Empty> : (
-                <table>
-                  <thead><tr><th>Modelo</th><th>N° serie</th><th>Activado</th><th>Alta DJI</th></tr></thead>
-                  <tbody>
-                    {productos.map((p) => (
-                      <tr key={p.id}>
-                        <td className="strong">{p.modelo}</td>
-                        <td>{p.nro_serie || '—'}</td>
-                        <td>{p.activado ? <span className="badge g">Sí</span> : <span className="badge a">No</span>}</td>
-                        <td>{p.alta_dji ? <span className="badge g">Sí</span> : <span className="badge a">No</span>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="card-pad">
+              {productos.length === 0 ? <Empty>Sin equipos cargados.</Empty> : (
+                productos.map((p) => (
+                  <div key={p.id} style={{ border: '1px solid var(--line-2)', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="strong grow">{p.equipo || p.modelo || 'Equipo sin nombre'}</span>
+                      {p.activado && <span className="badge g">Activado</span>}
+                      {!cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal(p)}>Editar</button>}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px', marginTop: 6 }}>
+                      {CAMPOS_EQUIPO
+                        .filter((c) => c.name !== 'equipo' && p[c.name] && String(p[c.name]).trim() !== '')
+                        .map((c) => (
+                          <div key={c.name} className="sm">
+                            <span className="muted">{c.label}:</span> {c.name === 'fecha_activacion' ? fmtFecha(p[c.name]) : p[c.name]}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -204,6 +243,18 @@ export default function VentaDetalle() {
           )}
         </div>
       </div>
+
+      {equipoModal && (
+        <ModalCampos
+          titulo={equipoModal.id ? 'Editar equipo' : 'Agregar equipo'}
+          subtitulo="Solo el equipo es obligatorio; el resto se completa a medida que tengas los datos."
+          campos={CAMPOS_EQUIPO}
+          valoresIniciales={equipoModal}
+          textoConfirmar={equipoModal.id ? 'Guardar cambios' : 'Agregar equipo'}
+          onConfirm={guardarEquipo}
+          onCancel={() => setEquipoModal(null)}
+        />
+      )}
     </div>
   );
 }
