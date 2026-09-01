@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { obtener, listar } from '../../lib/db';
+import { obtener, listar, actualizar } from '../../lib/db';
 import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, diasDesde } from '../../shared/ui.jsx';
-import Comentarios from '../../shared/Comentarios.jsx';
+import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
+import { useAuth } from '../../shared/Auth.jsx';
+import { esAdministrador, usuariosConRolPrefijo } from '../../shared/permisos';
 import Icon from '../../shared/Icon.jsx';
 import { ETAPAS, REQUISITOS, camposFaltantes, completarEtapa, avanzarEtapa, reabrirOportunidad } from './etapas.js';
 
@@ -18,9 +20,14 @@ export default function OportunidadDetalle() {
   const [seguimientos, setSeguimientos] = useState([]);
   const [intentos, setIntentos] = useState([]); // cierres de intentos anteriores
   const [venta, setVenta] = useState(null);
+  const [usuarios, setUsuarios] = useState([]);
   const [accion, setAccion] = useState(null); // 'coti' | 'seg' | 'cierre' | null
+  const [reasignando, setReasignando] = useState(false);
+  const [nuevoVendedorId, setNuevoVendedorId] = useState('');
+  const { perfil } = useAuth();
 
   useEffect(() => { cargar(); }, [id]);
+  useEffect(() => { listar('usuarios').then(setUsuarios).catch(() => setUsuarios([])); }, []);
 
   async function cargar() {
     const o = await obtener('oportunidades', id);
@@ -119,6 +126,25 @@ export default function OportunidadDetalle() {
 
   const motivoPerdida = op.motivo === 'Otro' ? (op.motivo_detalle || 'Otro') : op.motivo;
 
+  const esAdmin = esAdministrador(perfil);
+  const vendedores = usuariosConRolPrefijo(usuarios, 'Vendedor');
+  const vendedorActual = usuarios.find((u) => u.id === op.vendedor_id)?.nombre || '— sin asignar —';
+
+  async function reasignar() {
+    try {
+      const nuevoId = nuevoVendedorId ? Number(nuevoVendedorId) : null;
+      await actualizar('oportunidades', op.id, { vendedor_id: nuevoId });
+      const nom = usuarios.find((u) => u.id === nuevoId)?.nombre || 'sin asignar';
+      await comentarSistema('op', op.id, `Oportunidad reasignada a ${nom}.`);
+      setReasignando(false);
+      toast('Oportunidad reasignada');
+      await cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo reasignar', 'err');
+    }
+  }
+
   return (
     <div>
       <PageHeader titulo={`Oportunidad #${op.id} · ${nombreCliente(cliente)}`}
@@ -131,6 +157,11 @@ export default function OportunidadDetalle() {
         </>}
         {op.resultado === 'Ganada' && venta &&
           <button className="btn ghost" onClick={() => navigate(`/ventas/${venta.id}`)}>Ver venta</button>}
+        {esAdmin && !cerrada && (
+          <button className="btn ghost" onClick={() => { setNuevoVendedorId(op.vendedor_id || ''); setReasignando(true); }}>
+            Reasignar vendedor
+          </button>
+        )}
       </PageHeader>
 
       <div className="stepbar">
@@ -214,6 +245,7 @@ export default function OportunidadDetalle() {
             <div className="card-pad">
               <InfoRow k="Cliente" v={nombreCliente(cliente)} />
               <InfoRow k="Etapa" v={op.etapa} />
+              <InfoRow k="Vendedor" v={vendedorActual} />
               {intentoActual > 1 && <InfoRow k="Intento actual" v={`#${intentoActual}`} />}
               <InfoRow k="Primer contacto" v={fmtFecha(op.fecha_contacto)} />
               <InfoRow k="Relevamiento" v={op.relevamiento} />
@@ -232,6 +264,33 @@ export default function OportunidadDetalle() {
           onConfirm={onConfirmAccion}
           onCancel={() => setAccion(null)}
         />
+      )}
+
+      {reasignando && (
+        <div className="modal-bg" onClick={(e) => e.target.className === 'modal-bg' && setReasignando(false)}>
+          <div className="modal">
+            <div className="modal-h">
+              <span>Reasignar vendedor</span>
+              <button className="modal-x" onClick={() => setReasignando(false)}>✕</button>
+            </div>
+            <div className="modal-b">
+              <p className="muted sm" style={{ marginBottom: 14 }}>
+                Elegí el vendedor que se hará cargo de esta oportunidad. El cambio queda registrado en el historial.
+              </p>
+              <div className="field">
+                <label>Vendedor</label>
+                <select value={nuevoVendedorId} onChange={(e) => setNuevoVendedorId(e.target.value)}>
+                  <option value="">— Sin asignar —</option>
+                  {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+                </select>
+              </div>
+              <div className="modal-foot">
+                <button className="btn ghost" onClick={() => setReasignando(false)}>Cancelar</button>
+                <button className="btn" onClick={reasignar}>Reasignar</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
