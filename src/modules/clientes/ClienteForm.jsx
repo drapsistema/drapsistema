@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { crear, obtener, actualizar, clientePorCuit } from '../../lib/db';
 import { PageHeader, BackButton } from '../../shared/ui.jsx';
-import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 const VACIO = {
@@ -19,7 +18,6 @@ export default function ClienteForm() {
   const { id } = useParams();
   const editando = Boolean(id);
   const navigate = useNavigate();
-  const { usuarioActualId } = useAuth();
   const [form, setForm] = useState(VACIO);
   const [errores, setErrores] = useState({});
   const [guardando, setGuardando] = useState(false);
@@ -83,9 +81,10 @@ export default function ClienteForm() {
         await actualizar('clientes', id, datos);
         navigate(`/clientes/${id}`);
       } else {
-        // El cliente NO lleva vendedor asignado: eso se define al crear
-        // oportunidades. Solo registramos quién lo cargó.
-        const nuevo = await crear('clientes', { ...datos, creado_por: usuarioActualId });
+        // El cliente NO lleva vendedor asignado (eso se define al crear
+        // oportunidades) y 'creado_por' lo completa la base sola con el
+        // usuario logueado (default app_uid()), así RLS siempre coincide.
+        const nuevo = await crear('clientes', datos);
         navigate(`/clientes/${nuevo.id}`);
       }
     } catch (err) {

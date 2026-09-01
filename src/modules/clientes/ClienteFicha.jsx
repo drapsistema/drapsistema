@@ -16,6 +16,7 @@ export default function ClienteFicha() {
   const navigate = useNavigate();
   const [cliente, setCliente] = useState(null);
   const [contactos, setContactos] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
   const [oportunidades, setOportunidades] = useState([]);
   const [ventas, setVentas] = useState([]);
   const [trabajos, setTrabajos] = useState([]);
@@ -24,6 +25,7 @@ export default function ClienteFicha() {
 
   useEffect(() => {
     obtener('clientes', id).then(setCliente);
+    listar('usuarios').then(setUsuarios).catch(() => setUsuarios([]));
     listar('contactos', { cliente_id: Number(id) }).then(setContactos);
     listar('oportunidades', { cliente_id: Number(id) }).then(setOportunidades);
     listar('trabajos', { cliente_id: Number(id) }).then(setTrabajos).catch(() => setTrabajos([]));
@@ -67,6 +69,7 @@ export default function ClienteFicha() {
               <Row k="Teléfono" v={cliente.telefono} />
               <Row k="Mail" v={cliente.mail || '—'} />
               <Row k="Observaciones" v={cliente.observaciones || '—'} />
+              <Row k="Cargado por" v={usuarios.find((u) => u.id === cliente.creado_por)?.nombre || '—'} />
             </div>
           </div>
           <ContactosCard clienteId={id} contactos={contactos} setContactos={setContactos} />
