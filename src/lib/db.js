@@ -95,6 +95,25 @@ export async function eliminar(tabla, id) {
   return true;
 }
 
+// ---- CHEQUEO GLOBAL DE CUIT ----
+// Busca un cliente por CUIT contra TODOS los clientes (más allá de RLS),
+// vía la función SECURITY DEFINER `cliente_por_cuit`. Devuelve null si no
+// existe, o { cliente_id, es_propio, puede_ver, nombre }. El nombre viene
+// solo si quien pregunta puede ver la ficha (admin o quien lo cargó).
+export async function clientePorCuit(cuit) {
+  if (modoDemo) {
+    const c = (demoStore.clientes || []).find((x) => x.cuit === cuit);
+    if (!c) return null;
+    const nombre = c.tipo === 'Persona física'
+      ? `${c.nombre || ''} ${c.apellido || ''}`.trim()
+      : c.razon_social;
+    return { cliente_id: c.id, es_propio: true, puede_ver: true, nombre };
+  }
+  const { data, error } = await supabase.rpc('cliente_por_cuit', { p_cuit: cuit });
+  if (error) throw error;
+  return (data && data[0]) || null;
+}
+
 // ============================================================
 // ADMINISTRACIÓN DE USUARIOS (vía Edge Function)
 // ------------------------------------------------------------
