@@ -14,7 +14,7 @@ const HITOS = [{ hito: '1 semana', dias: 7 }, { hito: '1 mes', dias: 30 }, { hit
 // Campos de cada equipo cargado en la venta. Solo "Equipo" es obligatorio;
 // el resto se completa a medida que se tienen los datos.
 const CAMPOS_EQUIPO = [
-  { name: 'equipo', label: 'Equipo', type: 'text', required: true, placeholder: 'Ej: DJI Agras T50' },
+  { name: 'equipo', label: 'Equipo', type: 'text', required: true, full: true, placeholder: 'Ej: DJI Agras T50' },
   { name: 'ns_dron', label: 'N° de serie de dron', type: 'text' },
   { name: 'fecha_activacion', label: 'Fecha de activación', type: 'date' },
   { name: 'ns_caja_dron', label: 'NS caja de dron', type: 'text' },
@@ -250,6 +250,8 @@ export default function VentaDetalle() {
           subtitulo="Solo el equipo es obligatorio; el resto se completa a medida que tengas los datos."
           campos={CAMPOS_EQUIPO}
           valoresIniciales={equipoModal}
+          grid
+          ancho={680}
           textoConfirmar={equipoModal.id ? 'Guardar cambios' : 'Agregar equipo'}
           onConfirm={guardarEquipo}
           onCancel={() => setEquipoModal(null)}
