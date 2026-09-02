@@ -6,13 +6,13 @@ import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
+import { rolesDe } from '../../shared/permisos';
 import Icon from '../../shared/Icon.jsx';
 
 // Hitos de postventa y días desde la entrega.
 const HITOS = [{ hito: '1 semana', dias: 7 }, { hito: '1 mes', dias: 30 }, { hito: '2 meses', dias: 60 }];
 
-// Campos de cada equipo cargado en la venta. Solo "Equipo" es obligatorio;
-// el resto se completa a medida que se tienen los datos.
+// Campos de cada equipo cargado en la venta. Solo "Equipo" es obligatorio.
 const CAMPOS_EQUIPO = [
   { name: 'equipo', label: 'Equipo', type: 'text', required: true, full: true, placeholder: 'Ej: DJI Agras T50' },
   { name: 'ns_dron', label: 'N° de serie de dron', type: 'text' },
@@ -36,11 +36,14 @@ export default function VentaDetalle() {
   const [venta, setVenta] = useState(null);
   const [cliente, setCliente] = useState(null);
   const [productos, setProductos] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
   const [form, setForm] = useState({ direccion_entrega: '', fecha_entrega: '' });
-  const [equipoModal, setEquipoModal] = useState(null); // {} nuevo | producto (editar) | null
   const [motivoCancel, setMotivoCancel] = useState('');
   const [confirmaNombre, setConfirmaNombre] = useState('');
-  const { esAdmin, usuarioActualId } = useAuth();
+  const [equipoModal, setEquipoModal] = useState(null);
+  const [comisionInput, setComisionInput] = useState('');
+  const [guardandoEntrega, setGuardandoEntrega] = useState(false);
+  const { esAdmin, usuarioActualId, roles } = useAuth();
 
   useEffect(() => { cargar(); }, [id]);
 
@@ -51,6 +54,8 @@ export default function VentaDetalle() {
       setCliente(await obtener('clientes', v.cliente_id));
       setProductos(await listar('productos', { venta_id: Number(id) }));
       setForm({ direccion_entrega: v.direccion_entrega || '', fecha_entrega: v.fecha_entrega || '' });
+      setComisionInput(v.comision ? String(v.comision) : '');
+      listar('usuarios').then(setUsuarios).catch(() => setUsuarios([]));
     }
   }
 
@@ -60,10 +65,17 @@ export default function VentaDetalle() {
   const cancelada = venta.estado === 'Cancelada';
   const puedeCancelar = !entregada && !cancelada && esAdmin;
 
+  // Vendedor de la venta y si es tercerizado (para la comisión).
+  const vendedorVenta = usuarios.find((u) => u.id === venta.vendedor_id) || null;
+  const vendedorNombre = vendedorVenta?.nombre || '— sin asignar —';
+  const ventaEsTercerizada = vendedorVenta ? rolesDe(vendedorVenta).includes('Vendedor tercerizado') : false;
+  const soyElTercerizado = (roles || []).includes('Vendedor tercerizado') && venta.vendedor_id === usuarioActualId;
+  const mostrarComision = ventaEsTercerizada && (esAdmin || soyElTercerizado);
+  const comisionDefinida = venta.comision != null && Number(venta.comision) > 0;
+
   async function guardarEquipo(valores) {
     const datos = { ...valores };
-    // La fecha de activación es columna date: '' la rechaza Postgres, va null.
-    if (!datos.fecha_activacion) datos.fecha_activacion = null;
+    if (!datos.fecha_activacion) datos.fecha_activacion = null; // no mandar '' a columna date
     datos.activado = Boolean(datos.fecha_activacion);
     try {
       if (equipoModal && equipoModal.id) {
@@ -83,35 +95,63 @@ export default function VentaDetalle() {
   async function guardarEntrega() {
     if (!form.direccion_entrega || !form.fecha_entrega) { toast('Cargá dirección y fecha de entrega', 'err'); return; }
     if (productos.length === 0) { toast('Cargá al menos un equipo antes de la entrega', 'err'); return; }
-    const yaTenia = entregada;
-    await actualizar('ventas', id, { direccion_entrega: form.direccion_entrega, fecha_entrega: form.fecha_entrega, estado: 'Entregada' });
-    // Automatización: al cargar la entrega por primera vez, se generan las 3 tareas de postventa.
-    if (!yaTenia) {
-      const base = new Date(form.fecha_entrega);
-      for (const h of HITOS) {
-        const obj = new Date(base); obj.setDate(obj.getDate() + h.dias);
-        await crear('tareas_postventa', {
-          venta_id: Number(id), hito: h.hito, objetivo: obj.toISOString().slice(0, 10),
-          estado: 'Pendiente', fecha_real: '', observaciones: '', hectareas: null,
-          visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5,
-        });
+    setGuardandoEntrega(true);
+    try {
+      const yaTenia = entregada;
+      await actualizar('ventas', id, { direccion_entrega: form.direccion_entrega, fecha_entrega: form.fecha_entrega, estado: 'Entregada' });
+      if (!yaTenia) {
+        // Las 3 tareas de postventa se crean EN PARALELO (antes era una por
+        // una y por eso demoraba). Con Promise.all es un solo ida y vuelta.
+        const base = new Date(form.fecha_entrega);
+        await Promise.all(HITOS.map((h) => {
+          const obj = new Date(base); obj.setDate(obj.getDate() + h.dias);
+          return crear('tareas_postventa', {
+            venta_id: Number(id), hito: h.hito, objetivo: obj.toISOString().slice(0, 10),
+            estado: 'Pendiente', fecha_real: '', observaciones: '', hectareas: null,
+            visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5,
+          });
+        }));
+        await comentarSistema('venta', id, 'Entrega cargada. Se generaron 3 tareas de postventa.', usuarioActualId);
+        toast('Entrega guardada · postventa generada');
+      } else {
+        await comentarSistema('venta', id, 'Entrega actualizada.', usuarioActualId);
+        toast('Entrega actualizada');
       }
-      await comentarSistema('venta', id, `Entrega cargada. Se generaron 3 tareas de postventa.`);
-      toast('Entrega guardada · postventa generada');
-    } else {
-      toast('Entrega actualizada');
+      await cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo guardar la entrega', 'err');
+    } finally {
+      setGuardandoEntrega(false);
     }
-    cargar();
   }
 
   async function toggleCobro(campo) {
-    await actualizar('ventas', id, { [campo]: !venta[campo] });
+    const nuevo = !venta[campo];
+    await actualizar('ventas', id, { [campo]: nuevo });
+    await comentarSistema('venta', id, `${campo === 'cobrado' ? 'Cobrado' : 'Registrado'} marcado como ${nuevo ? 'Sí' : 'No'}.`, usuarioActualId);
     cargar();
+  }
+
+  async function guardarComision() {
+    const t = comisionInput.trim();
+    const val = t ? Number(t) : null;
+    if (t && (Number.isNaN(val) || val < 0)) { toast('La comisión debe ser un número válido', 'err'); return; }
+    try {
+      await actualizar('ventas', id, { comision: val });
+      await comentarSistema('venta', id,
+        val != null ? `Comisión del vendedor tercerizado definida en $${val}.` : 'Comisión del vendedor tercerizado borrada.',
+        usuarioActualId);
+      toast('Comisión guardada');
+      cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo guardar la comisión', 'err');
+    }
   }
 
   async function cancelar() {
     if (!motivoCancel) { toast('El motivo de cancelación es obligatorio', 'err'); return; }
-    // Doble confirmación: reescribir el nombre exacto del cliente (evita cancelaciones por error).
     const nombre = nombreCliente(cliente);
     if (confirmaNombre.trim() !== nombre) {
       toast('El nombre no coincide. Escribilo tal cual figura para confirmar.', 'err'); return;
@@ -120,7 +160,7 @@ export default function VentaDetalle() {
     if (venta.oportunidad_id) {
       await actualizar('oportunidades', venta.oportunidad_id, { resultado: 'Venta cancelada', etapa: 'Cierre' });
     }
-    await comentarSistema('venta', id, `Venta cancelada. Motivo: ${motivoCancel}.`);
+    await comentarSistema('venta', id, `Venta cancelada. Motivo: ${motivoCancel}.`, usuarioActualId);
     toast('Venta cancelada');
     cargar();
   }
@@ -141,13 +181,16 @@ export default function VentaDetalle() {
           <a onClick={() => navigate('/postventa')} style={{ marginLeft: 8 }}>Ver postventa →</a>
         </div>
       )}
+      {!esAdmin && (
+        <div className="aviso">Estás viendo la venta en modo lectura. Los datos de la venta los edita un administrador.</div>
+      )}
 
       <div className="two" style={{ marginTop: 16 }}>
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-h">
               <span className="grow">Productos activados ({productos.length})</span>
-              {!cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal({})}>+ Equipo</button>}
+              {esAdmin && !cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal({})}>+ Equipo</button>}
             </div>
             <div className="card-pad">
               {productos.length === 0 ? <Empty>Sin equipos cargados.</Empty> : (
@@ -156,7 +199,7 @@ export default function VentaDetalle() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="strong grow">{p.equipo || p.modelo || 'Equipo sin nombre'}</span>
                       {p.activado && <span className="badge g">Activado</span>}
-                      {!cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal(p)}>Editar</button>}
+                      {esAdmin && !cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal(p)}>Editar</button>}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px', marginTop: 6 }}>
                       {CAMPOS_EQUIPO
@@ -173,7 +216,8 @@ export default function VentaDetalle() {
             </div>
           </div>
 
-          {!cancelada && (
+          {/* Entrega: editable solo para admin; lectura para el resto */}
+          {esAdmin && !cancelada ? (
             <div className="card">
               <div className="card-h">Entrega</div>
               <div className="card-pad">
@@ -182,9 +226,17 @@ export default function VentaDetalle() {
                 <div className="field"><label>Fecha de entrega</label>
                   <input type="date" value={form.fecha_entrega} onChange={(e) => setForm({ ...form, fecha_entrega: e.target.value })} /></div>
                 {!entregada && <div className="aviso">Cargar la fecha de entrega genera las 3 tareas de postventa. Después la venta ya no se puede cancelar.</div>}
-                <button className="btn full" onClick={guardarEntrega}>
-                  <Icon name="check" size={16} /> {entregada ? 'Actualizar entrega' : 'Guardar entrega y generar postventa'}
+                <button className="btn full" onClick={guardarEntrega} disabled={guardandoEntrega}>
+                  <Icon name="check" size={16} /> {guardandoEntrega ? 'Guardando…' : (entregada ? 'Actualizar entrega' : 'Guardar entrega y generar postventa')}
                 </button>
+              </div>
+            </div>
+          ) : (
+            <div className="card">
+              <div className="card-h">Entrega</div>
+              <div className="card-pad">
+                <InfoRow k="Dirección" v={venta.direccion_entrega || '—'} />
+                <InfoRow k="Fecha" v={venta.fecha_entrega ? fmtFecha(venta.fecha_entrega) : 'pendiente'} />
               </div>
             </div>
           )}
@@ -200,21 +252,56 @@ export default function VentaDetalle() {
                 ? <a onClick={() => navigate(`/comercial/${venta.oportunidad_id}`)}>#{venta.oportunidad_id} →</a>
                 : <span className="muted">venta directa</span>} />
               <InfoRow k="Cliente" v={nombreCliente(cliente)} />
+              <InfoRow k="Vendedor" v={vendedorNombre} />
               <InfoRow k="Ganada" v={fmtFecha(venta.fecha_ganada)} />
               <InfoRow k="Estado" v={<span className={'badge ' + (cancelada ? 'r' : entregada ? 'b' : '')}>{venta.estado}</span>} />
             </div>
           </div>
 
+          {/* Comisión: solo si el vendedor de la venta es tercerizado */}
+          {mostrarComision && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-h">Comisión (vendedor tercerizado)</div>
+              <div className="card-pad">
+                {esAdmin ? (
+                  <>
+                    <div className="field">
+                      <label>Monto de comisión</label>
+                      <input inputMode="decimal" value={comisionInput}
+                        onChange={(e) => setComisionInput(e.target.value)} placeholder="Ej: 15000 (opcional)" />
+                      <div className="hint">Aplica solo a vendedores tercerizados. Dejalo vacío si todavía no está definida.</div>
+                    </div>
+                    <button className="btn sm" onClick={guardarComision}><Icon name="check" size={14} /> Guardar comisión</button>
+                  </>
+                ) : (
+                  comisionDefinida
+                    ? <div>Comisión de venta: <span className="strong">${Number(venta.comision).toLocaleString('es-AR')}</span></div>
+                    : <div>Comisión de venta: <span className="badge a">No definida</span></div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Cobro: editable solo admin; lectura para el resto */}
           {!cancelada && (
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-h">Cobro</div>
               <div className="card-pad">
-                <label style={{ display: 'flex', gap: 8, marginBottom: 10, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={venta.cobrado} onChange={() => toggleCobro('cobrado')} /> Cobrado
-                </label>
-                <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={venta.registrado} onChange={() => toggleCobro('registrado')} /> Registrado
-                </label>
+                {esAdmin ? (
+                  <>
+                    <label style={{ display: 'flex', gap: 8, marginBottom: 10, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={venta.cobrado} onChange={() => toggleCobro('cobrado')} /> Cobrado
+                    </label>
+                    <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={venta.registrado} onChange={() => toggleCobro('registrado')} /> Registrado
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <InfoRow k="Cobrado" v={venta.cobrado ? 'Sí' : 'No'} />
+                    <InfoRow k="Registrado" v={venta.registrado ? 'Sí' : 'No'} />
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -236,7 +323,7 @@ export default function VentaDetalle() {
               </div>
             </div>
           )}
-          {entregada && !cancelada && (
+          {entregada && !cancelada && esAdmin && (
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-pad muted sm">Esta venta ya generó la postventa, por lo que no se puede cancelar.</div>
             </div>
