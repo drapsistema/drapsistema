@@ -1,14 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { obtener, listar, actualizar } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO } from '../../shared/ui.jsx';
+import { obtener, listar, actualizar, generarPostventa } from '../../lib/db';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, diasDesde } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import { useToast } from '../../shared/Toast.jsx';
+import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
+
+// Semáforo de urgencia de una tarea pendiente, según su fecha objetivo.
+// (vencida = rojo · vence dentro de 7 días = amarillo · más lejos = verde)
+function semaforoTarea(objetivo) {
+  const d = diasDesde(objetivo); // >0 vencida · 0 hoy · <0 faltan (-d) días
+  if (d > 0) return { cl: 'r', txt: `Vencida hace ${d} día${d === 1 ? '' : 's'}` };
+  if (d === 0) return { cl: 'a', txt: 'Vence hoy' };
+  if (d >= -7) return { cl: 'a', txt: `Faltan ${-d} día${-d === 1 ? '' : 's'}` };
+  return { cl: 'g', txt: `Faltan ${-d} días` };
+}
 
 export default function PostventaDetalle() {
   const { id } = useParams(); // id de la venta
   const toast = useToast();
+  const { usuarioActualId } = useAuth();
   const [venta, setVenta] = useState(null);
   const [cliente, setCliente] = useState(null);
   const [tareas, setTareas] = useState([]);
@@ -26,25 +38,45 @@ export default function PostventaDetalle() {
 
   if (!venta) return <Empty>Cargando…</Empty>;
 
+  const entregada = Boolean(venta.fecha_entrega);
+  const faltaGenerar = entregada && tareas.length === 0;
+
+  async function generar() {
+    try {
+      const n = await generarPostventa(id);
+      if (n > 0) {
+        await comentarSistema('post', id, `Se generó la postventa (${n} tareas de contacto).`, usuarioActualId);
+        toast('Postventa generada');
+      } else {
+        toast('No había nada para generar', 'err');
+      }
+      cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo generar la postventa', 'err');
+    }
+  }
+
   async function marcarRealizada(t, datos) {
     await actualizar('tareas_postventa', t.id, {
       estado: 'Realizada', fecha_real: hoyISO(), observaciones: datos.obs,
       hectareas: datos.hectareas ? Number(datos.hectareas) : null,
       visita: datos.visita, visita_estado: datos.visita ? 'Solicitada' : '',
     });
-    if (datos.visita) await comentarSistema('post', id, 'Se solicitó coordinar una visita técnica.');
+    await comentarSistema('post', id, `Contacto de "${t.hito}" registrado${datos.hectareas ? ` · ${datos.hectareas} ha` : ''}.`, usuarioActualId);
+    if (datos.visita) await comentarSistema('post', id, 'Se solicitó coordinar una visita técnica.', usuarioActualId);
     toast('Contacto registrado');
     cargar();
   }
 
   async function agendarVisita(t, fecha) {
     await actualizar('tareas_postventa', t.id, { visita_estado: 'Agendada', visita_agenda: fecha });
-    await comentarSistema('post', id, `Visita técnica agendada para ${fmtFecha(fecha)}.`);
+    await comentarSistema('post', id, `Visita técnica agendada para ${fmtFecha(fecha)}.`, usuarioActualId);
     toast('Visita agendada'); cargar();
   }
   async function registrarVisita(t, fecha) {
     await actualizar('tareas_postventa', t.id, { visita_estado: 'Realizada', visita_real: fecha });
-    await comentarSistema('post', id, `Visita técnica realizada el ${fmtFecha(fecha)}.`);
+    await comentarSistema('post', id, `Visita técnica realizada el ${fmtFecha(fecha)}.`, usuarioActualId);
     toast('Visita registrada'); cargar();
   }
 
@@ -60,7 +92,12 @@ export default function PostventaDetalle() {
           <div className="card">
             <div className="card-h">Tareas de contacto ({tareas.length})</div>
             <div className="card-pad">
-              {tareas.length === 0 ? <Empty>Sin tareas.</Empty> :
+              {faltaGenerar ? (
+                <div className="aviso" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <span className="grow">Esta venta está entregada pero todavía no tiene sus tareas de postventa.</span>
+                  <button className="btn sm" onClick={generar}><Icon name="check" size={14} /> Generar postventa</button>
+                </div>
+              ) : tareas.length === 0 ? <Empty>Sin tareas.</Empty> :
                 tareas.map((t) => <Tarea key={t.id} t={t} onMarcar={marcarRealizada} onAgendar={agendarVisita} onRegistrar={registrarVisita} />)}
             </div>
           </div>
@@ -87,6 +124,7 @@ function Tarea({ t, onMarcar, onAgendar, onRegistrar }) {
   const [hectareas, setHectareas] = useState('');
   const [visita, setVisita] = useState(false);
   const [fechaVisita, setFechaVisita] = useState(hoyISO());
+  const sem = semaforoTarea(t.objetivo);
 
   if (t.estado === 'Realizada') {
     return (
@@ -124,9 +162,12 @@ function Tarea({ t, onMarcar, onAgendar, onRegistrar }) {
 
   return (
     <div style={{ padding: '10px 0', borderBottom: '1px solid var(--line-2)' }}>
-      <div className="strong sm" style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <div className="strong sm" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <span>{t.hito} · objetivo {fmtFecha(t.objetivo)}</span>
         {!abierto && <button className="btn ghost sm" onClick={() => setAbierto(true)}>Registrar</button>}
+      </div>
+      <div className="muted sm" style={{ marginTop: 2 }}>
+        <span className={'dot ' + sem.cl} />{sem.txt}
       </div>
       {abierto && (
         <div style={{ marginTop: 8 }}>
