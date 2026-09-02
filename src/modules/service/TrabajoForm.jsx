@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listar, crear, obtener, actualizar } from '../../lib/db';
+import { listar, crear, obtener, siguienteNroTrabajo } from '../../lib/db';
 import { PageHeader, BackButton, nombreCliente, hoyISO } from '../../shared/ui.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import Icon from '../../shared/Icon.jsx';
@@ -38,19 +38,23 @@ export default function TrabajoForm() {
     setErrores(e);
     if (Object.keys(e).length) return;
 
-    const nro = proximoNro();
-    const nuevo = await crear('trabajos', {
-      cliente_id: Number(form.cliente_id), tipo: form.tipo, nro, ingreso: hoyISO(), egreso: '',
-      marca: form.marca, modelo: form.modelo, nro_serie: form.nro_serie,
-      garantia: form.garantia, registrado: false, estado: 'Ingresada',
-      observaciones: form.observaciones, informe: '',
-    });
-    // Avanzar el contador correspondiente.
-    if (form.tipo === 'Service') await actualizar('configuracion', 1, { ot_actual: cfg.ot_actual + 1 });
-    else await actualizar('configuracion', 1, { rem_actual: cfg.rem_actual + 1 });
-
-    toast(`Trabajo ${nro} creado`);
-    navigate(`/service/${nuevo.id}`);
+    try {
+      // El número lo asigna la base de forma atómica (sirve también para
+      // técnicos, que no pueden tocar `configuracion` directamente).
+      const nro = await siguienteNroTrabajo(form.tipo);
+      const nuevo = await crear('trabajos', {
+        cliente_id: Number(form.cliente_id), tipo: form.tipo, nro, ingreso: hoyISO(),
+        marca: form.marca, modelo: form.modelo, nro_serie: form.nro_serie,
+        garantia: form.garantia, registrado: false, estado: 'Ingresada',
+        observaciones: form.observaciones, informe: '',
+        // Sin `egreso`: es columna date y '' la rechaza Postgres (ese era el bug).
+      });
+      toast(`Trabajo ${nro} creado`);
+      navigate(`/service/${nuevo.id}`);
+    } catch (err) {
+      console.error('Error al ingresar drone:', err);
+      toast('No se pudo ingresar el drone', 'err');
+    }
   }
 
   return (
