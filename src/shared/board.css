@@ -45,3 +45,7 @@
 .modal-x { background: none; border: none; color: var(--ink-3); font-size: 16px; cursor: pointer; }
 .modal-b { padding: 18px 20px; }
 .modal-foot { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+
+/* Variante en grilla (para tableros con muchas columnas, ej: Service en 2 filas de 3) */
+.kanban-grid { display: grid; overflow-x: visible; }
+.kanban-grid .kcol { max-width: none; min-width: 0; }

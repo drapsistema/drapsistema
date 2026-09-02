@@ -35,7 +35,7 @@ import './board.css';
 //   onCardClick: (item) => void
 // ============================================================
 
-export default function Board({ estados, items, render, camposTransicion, onMover, onCardClick }) {
+export default function Board({ estados, items, render, camposTransicion, onMover, onCardClick, columnas }) {
   const [vista, setVista] = useState('kanban'); // 'kanban' | 'lista'
 
   return (
@@ -48,14 +48,14 @@ export default function Board({ estados, items, render, camposTransicion, onMove
       </div>
 
       <BoardDnd
-        vista={vista} estados={estados} items={items}
+        vista={vista} estados={estados} items={items} columnas={columnas}
         render={render} camposTransicion={camposTransicion} onMover={onMover} onCardClick={onCardClick}
       />
     </div>
   );
 }
 
-function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, onCardClick }) {
+function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, onCardClick, columnas }) {
   const [activo, setActivo] = useState(null);          // item que se arrastra
   const [transicion, setTransicion] = useState(null);  // { item, hacia, campos }
 
@@ -93,7 +93,8 @@ function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, on
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       {vista === 'kanban' ? (
-        <div className="kanban">
+        <div className={'kanban' + (columnas ? ' kanban-grid' : '')}
+          style={columnas ? { gridTemplateColumns: `repeat(${columnas}, minmax(0, 1fr))` } : undefined}>
           {estados.map((est) => (
             <Columna key={est.id} estado={est}
               items={items.filter((i) => i.estado === est.id)} render={render} onCardClick={onCardClick} />
