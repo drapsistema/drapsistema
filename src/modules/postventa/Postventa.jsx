@@ -17,6 +17,7 @@ function semaforo(venta, tareas) {
 const COLS = [
   { key: 'cliente', label: 'Cliente' },
   { key: 'venta', label: 'Venta' },
+  { key: 'vendedor', label: 'Vendedor' },
   { key: 'entrega', label: 'Entrega' },
   { key: 'dias', label: 'Días s/contacto' },
   { key: 'semaforo', label: 'Semáforo' },
@@ -28,6 +29,7 @@ export default function Postventa() {
   const [ventas, setVentas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [tareas, setTareas] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [q, setQ] = useState('');
   const [desde, setDesde] = useState('');
@@ -36,12 +38,13 @@ export default function Postventa() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([listar('ventas'), listar('clientes'), listar('tareas_postventa')])
-      .then(([vs, cs, ts]) => { setVentas(vs); setClientes(cs); setTareas(ts); setCargando(false); });
+    Promise.all([listar('ventas'), listar('clientes'), listar('tareas_postventa'), listar('usuarios')])
+      .then(([vs, cs, ts, us]) => { setVentas(vs); setClientes(cs); setTareas(ts); setUsuarios(us); setCargando(false); });
   }, []);
 
   const entregadas = ventas.filter((v) => v.fecha_entrega && v.estado !== 'Cancelada');
   const nombrePorId = (id) => { const c = clientes.find((x) => x.id === id); return c ? nombreCliente(c) : `Cliente #${id}`; };
+  const nombreVen = (id) => usuarios.find((u) => u.id === id)?.nombre || '— sin asignar —';
   const tareasDe = (vid) => tareas.filter((t) => t.venta_id === vid);
   const ventaDe = (vid) => ventas.find((x) => x.id === vid);
   const clienteDeTarea = (t) => { const v = ventaDe(t.venta_id); return v ? v.cliente_id : null; };
@@ -70,7 +73,7 @@ export default function Postventa() {
     const hechas = ts.filter((t) => t.estado === 'Realizada').length;
     // Rojo si hay una visita AGENDADA sin atender; verde si no hay agendadas o ya se atendieron.
     const visitaPendiente = ts.some((t) => t.visita_estado === 'Agendada');
-    return { v, s, hechas, total: ts.length, visitaPendiente, cliente: nombrePorId(v.cliente_id) };
+    return { v, s, hechas, total: ts.length, visitaPendiente, cliente: nombrePorId(v.cliente_id), vendedor: nombreVen(v.vendedor_id) };
   });
 
   const sev = (cl) => (cl === 'r' ? 2 : cl === 'a' ? 1 : 0);
@@ -78,6 +81,7 @@ export default function Postventa() {
     switch (key) {
       case 'cliente': return f.cliente.toLowerCase();
       case 'venta': return f.v.id;
+      case 'vendedor': return f.vendedor.toLowerCase();
       case 'entrega': return f.v.fecha_entrega || '';
       case 'dias': return f.s.dias;
       case 'tareas': return f.total ? f.hechas / f.total : 0;
@@ -89,7 +93,7 @@ export default function Postventa() {
 
   let filas = filasBase;
   const term = q.trim().toLowerCase();
-  if (term) filas = filas.filter((f) => f.cliente.toLowerCase().includes(term) || vt(f.v.id).toLowerCase().includes(term));
+  if (term) filas = filas.filter((f) => f.cliente.toLowerCase().includes(term) || vt(f.v.id).toLowerCase().includes(term) || f.vendedor.toLowerCase().includes(term));
   if (desde) filas = filas.filter((f) => (f.v.fecha_entrega || '') >= desde);
   if (hasta) filas = filas.filter((f) => (f.v.fecha_entrega || '') <= hasta);
   const dir = sort.dir === 'asc' ? 1 : -1;
@@ -178,6 +182,7 @@ export default function Postventa() {
                 <tr key={f.v.id} className="clickable" onClick={() => navigate(`/postventa/${f.v.id}`)}>
                   <td className="strong">{f.cliente}</td>
                   <td>{vt(f.v.id)}</td>
+                  <td>{f.vendedor}</td>
                   <td>{fmtFecha(f.v.fecha_entrega)}</td>
                   <td>{f.s.dias}</td>
                   <td><span className={'dot ' + f.s.cl} />{f.s.cl === 'g' ? 'Verde' : f.s.cl === 'a' ? 'Amarillo' : 'Rojo'}</td>

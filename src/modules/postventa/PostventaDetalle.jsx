@@ -25,6 +25,7 @@ export default function PostventaDetalle() {
   const [venta, setVenta] = useState(null);
   const [cliente, setCliente] = useState(null);
   const [tareas, setTareas] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
   const [nuevaTarea, setNuevaTarea] = useState(false);
 
   useEffect(() => { cargar(); }, [id]);
@@ -35,6 +36,7 @@ export default function PostventaDetalle() {
     if (v) {
       setCliente(await obtener('clientes', v.cliente_id));
       setTareas((await listar('tareas_postventa', { venta_id: Number(id) })).sort((a, b) => a.id - b.id));
+      listar('usuarios').then(setUsuarios).catch(() => setUsuarios([]));
     }
   }
 
@@ -130,6 +132,7 @@ export default function PostventaDetalle() {
             <div className="card-h">Resumen</div>
             <div className="card-pad">
               <InfoRow k="Cliente" v={nombreCliente(cliente)} />
+              <InfoRow k="Vendedor" v={usuarios.find((u) => u.id === venta.vendedor_id)?.nombre || '— sin asignar —'} />
               <InfoRow k="Entrega" v={fmtFecha(venta.fecha_entrega)} />
               <InfoRow k="Realizadas" v={`${tareas.filter((t) => t.estado === 'Realizada').length} de ${tareas.length}`} />
             </div>
