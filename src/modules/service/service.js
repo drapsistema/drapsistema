@@ -1,33 +1,36 @@
 // ============================================================
 // SERVICE · Estados y candados de transición (fuente única)
 // ------------------------------------------------------------
-// La usan tanto el tablero (al arrastrar un ticket) como el detalle
-// (los botones de estado), así las reglas nunca se desincronizan.
+// El flujo avanza SOLO al cumplirse las condiciones (auto-avance,
+// como el CRM): las acciones del detalle empujan el estado. El
+// tablero permite además arrastrar, pero solo si ya se cumplen las
+// condiciones; para finalizar/entregar se obliga a usar el detalle,
+// porque piden confirmación / generan el informe.
 // ============================================================
 
 export const ESTADOS_SERVICE = [
   'Ingresada', 'En diagnóstico', 'En reparación', 'Esperando repuestos', 'Finalizada', 'Entregada',
 ];
 
-const idx = (e) => ESTADOS_SERVICE.indexOf(e);
-
-// Valida si un trabajo puede pasar a `hacia`, según lo cargado.
-//   ctx = { tareas: [...], tieneInforme: boolean }
+// Valida un intento de mover (arrastrar) un trabajo a `hacia`.
 // Devuelve null si se puede, o un texto con el motivo del bloqueo.
-// Reglas (del diseño original):
-//   · Para estar en "En diagnóstico" o más allá: al menos un técnico
-//     asignado (una tarea con técnico).
-//   · Para "Finalizada" o "Entregada": informe técnico cargado.
-export function validarTransicion(hacia, ctx) {
-  const iH = idx(hacia);
-  const conTecnico = (ctx.tareas || []).some((t) => t.tecnico_id);
-  const tieneInforme = Boolean(ctx.tieneInforme);
-
-  if (iH >= idx('En diagnóstico') && !conTecnico) {
-    return 'Asigná al menos un técnico (agregá una tarea con su técnico) antes de avanzar.';
+export function validarTransicion(hacia, trabajo, tareas) {
+  const t = trabajo || {};
+  const hayTareas = (tareas || []).length > 0;
+  switch (hacia) {
+    case 'En diagnóstico':
+      return t.tecnico_id ? null : 'Asigná un técnico en el detalle para pasar a diagnóstico.';
+    case 'En reparación':
+      return (t.diagnostico && hayTareas && t.aprobacion_cliente)
+        ? null
+        : 'Cargá diagnóstico, tareas y la aprobación del cliente en el detalle.';
+    case 'Esperando repuestos':
+      return t.espera_desde ? null : 'Indicá desde cuándo se esperan los repuestos en el detalle.';
+    case 'Finalizada':
+      return 'Finalizá desde el detalle: pide confirmación y genera el informe.';
+    case 'Entregada':
+      return 'Registrá la entrega desde el detalle del ticket.';
+    default:
+      return null; // Ingresada y retrocesos
   }
-  if (iH >= idx('Finalizada') && !tieneInforme) {
-    return 'Cargá el informe técnico antes de finalizar.';
-  }
-  return null;
 }

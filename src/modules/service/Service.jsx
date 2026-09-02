@@ -30,12 +30,8 @@ export default function Service() {
   const nombrePorId = (id) => { const c = clientes.find((x) => x.id === id); return c ? nombreCliente(c) : `Cliente #${id}`; };
   const tareasDe = (tid) => tareas.filter((t) => t.trabajo_id === tid);
 
-  // Cada ticket lleva su contexto para validar las transiciones.
-  let items = trabajos.map((t) => ({
-    ...t,
-    estado: t.estado,
-    _ctx: { tareas: tareasDe(t.id), tieneInforme: Boolean(t.informe) },
-  }));
+  // Cada ticket lleva sus tareas para validar las transiciones al arrastrar.
+  let items = trabajos.map((t) => ({ ...t, estado: t.estado }));
 
   const term = q.trim().toLowerCase();
   if (term) {
@@ -51,7 +47,7 @@ export default function Service() {
 
   async function mover(item, hacia) {
     if (item.estado === hacia) return;
-    const motivo = validarTransicion(hacia, item._ctx);
+    const motivo = validarTransicion(hacia, item, tareasDe(item.id));
     if (motivo) { toast(motivo, 'err'); return; }
     try {
       const cambios = { estado: hacia };
@@ -88,6 +84,7 @@ export default function Service() {
         <Board
           estados={ESTADOS}
           items={items}
+          columnas={3}
           camposTransicion={camposTransicion}
           onMover={mover}
           onCardClick={(t) => navigate(`/service/${t.id}`)}
