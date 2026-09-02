@@ -114,6 +114,32 @@ export async function clientePorCuit(cuit) {
   return (data && data[0]) || null;
 }
 
+// ---- GENERAR POSTVENTA ----
+// Crea las 3 tareas de postventa de una venta entregada que no las tenga,
+// vía la función SECURITY DEFINER `generar_postventa` (corre por fuera de
+// RLS). Idempotente. Devuelve cuántas tareas creó (0 si no correspondía).
+export async function generarPostventa(ventaId) {
+  const vid = Number(ventaId);
+  if (modoDemo) {
+    const v = (demoStore.ventas || []).find((x) => x.id === vid);
+    const yaHay = (demoStore.tareas_postventa || []).some((t) => t.venta_id === vid);
+    if (!v || !v.fecha_entrega || yaHay) return 0;
+    const base = new Date(v.fecha_entrega);
+    for (const [hito, d] of [['1 semana', 7], ['1 mes', 30], ['2 meses', 60]]) {
+      const obj = new Date(base); obj.setDate(obj.getDate() + d);
+      await crear('tareas_postventa', {
+        venta_id: vid, hito, objetivo: obj.toISOString().slice(0, 10), estado: 'Pendiente',
+        fecha_real: null, observaciones: '', hectareas: null, visita: false,
+        visita_estado: '', visita_agenda: null, visita_real: null, responsable_id: null,
+      });
+    }
+    return 3;
+  }
+  const { data, error } = await supabase.rpc('generar_postventa', { p_venta_id: vid });
+  if (error) throw error;
+  return data;
+}
+
 // ============================================================
 // ADMINISTRACIÓN DE USUARIOS (vía Edge Function)
 // ------------------------------------------------------------
