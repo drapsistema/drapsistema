@@ -13,12 +13,26 @@ export default function Parametros() {
   const set = (k, v) => setCfg((c) => ({ ...c, [k]: v }));
 
   async function guardar() {
-    await actualizar('configuracion', 1, cfg);
-    toast('Parámetros guardados');
-  }
-  function probarMail() {
-    if (!cfg.mail_host || !cfg.mail_user) { toast('Cargá servidor y casilla antes de probar', 'err'); return; }
-    toast(`Mail de prueba enviado a ${cfg.mail_user}`);
+    // Enviamos SOLO los campos reales y editables. Antes se mandaba todo el
+    // objeto cfg, que incluía mail_pass (columna inexistente) y rompía el
+    // guardado. Tampoco tocamos ot_actual/rem_actual: los maneja la
+    // numeración automática.
+    const payload = {
+      ot_inicial: Number(cfg.ot_inicial) || 0,
+      rem_inicial: Number(cfg.rem_inicial) || 0,
+      sem_com_verde: Number(cfg.sem_com_verde) || 0,
+      sem_com_amarillo: Number(cfg.sem_com_amarillo) || 0,
+      sem_post_verde: Number(cfg.sem_post_verde) || 0,
+      sem_post_amarillo: Number(cfg.sem_post_amarillo) || 0,
+      vendedores_ven_todo: Boolean(cfg.vendedores_ven_todo),
+    };
+    try {
+      await actualizar('configuracion', 1, payload);
+      toast('Parámetros guardados');
+    } catch (e) {
+      console.error(e);
+      toast('No se pudieron guardar los parámetros', 'err');
+    }
   }
 
   return (
@@ -56,25 +70,6 @@ export default function Parametros() {
               <Field label="Amarillo hasta" value={cfg.sem_post_amarillo} onChange={(v) => set('sem_post_amarillo', +v)} type="number" />
             </div>
           </div>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-h"><Icon name="mail" size={16} /> Correo saliente</div>
-        <div className="card-pad">
-          <div className="aviso">Desde esta cuenta el sistema envía las invitaciones y los enlaces de blanqueo. Suele ser una casilla dedicada tipo sistema@ o no-responder@.</div>
-          <div className="form-grid">
-            <Field label="Servidor SMTP" value={cfg.mail_host} onChange={(v) => set('mail_host', v)} placeholder="smtp.gmail.com" />
-            <Field label="Puerto" value={cfg.mail_port} onChange={(v) => set('mail_port', v)} placeholder="587" />
-            <div className="field">
-              <label>Seguridad</label>
-              <select value={cfg.mail_seg} onChange={(e) => set('mail_seg', e.target.value)}><option>TLS</option><option>SSL</option><option>Ninguna</option></select>
-            </div>
-            <Field label="Usuario / casilla" value={cfg.mail_user} onChange={(v) => set('mail_user', v)} placeholder="sistema@empresa.com" />
-            <Field label="Contraseña de la casilla" value={cfg.mail_pass || ''} onChange={(v) => set('mail_pass', v)} type="password" placeholder="••••••••" />
-            <Field label="Nombre del remitente" value={cfg.mail_from} onChange={(v) => set('mail_from', v)} />
-          </div>
-          <button className="btn ghost" onClick={probarMail}><Icon name="mail" size={15} /> Enviar mail de prueba</button>
         </div>
       </div>
 
