@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listar } from '../../lib/db';
+import { listar, obtener } from '../../lib/db';
 import { PageHeader, Empty, nombreCliente, fmtFecha, diasDesde } from '../../shared/ui.jsx';
 import Icon from '../../shared/Icon.jsx';
 
-// Semáforo por cliente: días desde el último contacto realizado (o desde la entrega).
-function semaforo(venta, tareas) {
+// Semáforo por cliente: días desde el último contacto (umbrales del admin).
+function semaforo(venta, tareas, verde = 30, amarillo = 60) {
   const realizadas = tareas.filter((t) => t.estado === 'Realizada' && t.fecha_real);
   const ultima = realizadas.map((t) => t.fecha_real).sort().pop() || venta.fecha_entrega;
   const dias = diasDesde(ultima);
-  const cl = dias <= 30 ? 'g' : dias <= 60 ? 'a' : 'r';
+  const cl = dias <= verde ? 'g' : dias <= amarillo ? 'a' : 'r';
   return { dias, cl };
 }
 
@@ -30,6 +30,7 @@ export default function Postventa() {
   const [clientes, setClientes] = useState([]);
   const [tareas, setTareas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [cfg, setCfg] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [q, setQ] = useState('');
   const [desde, setDesde] = useState('');
@@ -40,7 +41,11 @@ export default function Postventa() {
   useEffect(() => {
     Promise.all([listar('ventas'), listar('clientes'), listar('tareas_postventa'), listar('usuarios')])
       .then(([vs, cs, ts, us]) => { setVentas(vs); setClientes(cs); setTareas(ts); setUsuarios(us); setCargando(false); });
+    obtener('configuracion', 1).then(setCfg).catch(() => {});
   }, []);
+
+  const sVerde = cfg?.sem_post_verde ?? 30;
+  const sAmarillo = cfg?.sem_post_amarillo ?? 60;
 
   const entregadas = ventas.filter((v) => v.fecha_entrega && v.estado !== 'Cancelada');
   const nombrePorId = (id) => { const c = clientes.find((x) => x.id === id); return c ? nombreCliente(c) : `Cliente #${id}`; };
@@ -69,7 +74,7 @@ export default function Postventa() {
   // Filas de la tabla principal, con lo necesario para ordenar y filtrar.
   const filasBase = entregadas.map((v) => {
     const ts = tareasDe(v.id);
-    const s = semaforo(v, ts);
+    const s = semaforo(v, ts, sVerde, sAmarillo);
     const hechas = ts.filter((t) => t.estado === 'Realizada').length;
     // Rojo si hay una visita AGENDADA sin atender; verde si no hay agendadas o ya se atendieron.
     const visitaPendiente = ts.some((t) => t.visita_estado === 'Agendada');
@@ -118,7 +123,7 @@ export default function Postventa() {
           <div className="card-h" style={{ color: 'var(--amber)' }}>
             <Icon name="postventa" size={16} /> Visitas técnicas a coordinar ({visitas.length})
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap" style={{ maxHeight: 236, overflowY: 'auto' }}>
             <table>
               <thead><tr><th>Cliente</th><th>Tarea de contacto</th><th>Estado</th><th>Agendada</th><th>Última visita técnica</th></tr></thead>
               <tbody>
