@@ -79,7 +79,11 @@ export default function ModalCampos({
                   {c.type === 'select' ? (
                     <select value={valores[c.name]} onChange={(ev) => set(c.name, ev.target.value)} style={err}>
                       <option value="">— Elegí —</option>
-                      {(c.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                      {(c.options || []).map((o) => {
+                        const val = (o && typeof o === 'object') ? o.value : o;
+                        const lab = (o && typeof o === 'object') ? o.label : o;
+                        return <option key={String(val)} value={val}>{lab}</option>;
+                      })}
                     </select>
                   ) : c.type === 'textarea' ? (
                     <textarea rows={3} value={valores[c.name]} placeholder={c.placeholder || ''}
