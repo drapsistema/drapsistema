@@ -1,130 +1,104 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listar } from '../../lib/db';
-import { PageHeader, Empty, nombreCliente, fmtFecha } from '../../shared/ui.jsx';
-import Icon from '../../shared/Icon.jsx';
+import { listar, actualizar } from '../../lib/db';
+import { PageHeader, Empty, nombreCliente } from '../../shared/ui.jsx';
+import { comentarSistema } from '../../shared/Comentarios.jsx';
+import { useToast } from '../../shared/Toast.jsx';
+import { useAuth } from '../../shared/Auth.jsx';
+import Board from '../../shared/Board.jsx';
+import { ESTADOS_SERVICE, validarTransicion } from './service.js';
 
-const COLS = [
-  { key: 'nro', label: 'N°' },
-  { key: 'tipo', label: 'Tipo' },
-  { key: 'cliente', label: 'Cliente' },
-  { key: 'equipo', label: 'Equipo' },
-  { key: 'ingreso', label: 'Ingreso' },
-  { key: 'estado', label: 'Estado' },
-];
+const ESTADOS = ESTADOS_SERVICE.map((e) => ({ id: e, label: e }));
 
 export default function Service() {
   const [trabajos, setTrabajos] = useState([]);
   const [clientes, setClientes] = useState([]);
+  const [tareas, setTareas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [q, setQ] = useState('');
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
-  const [sort, setSort] = useState({ col: 'ingreso', dir: 'desc' });
   const navigate = useNavigate();
+  const toast = useToast();
+  const { usuarioActualId } = useAuth();
 
-  useEffect(() => {
-    Promise.all([listar('trabajos'), listar('clientes')]).then(([ts, cs]) => {
-      setTrabajos(ts); setClientes(cs); setCargando(false);
-    });
-  }, []);
+  useEffect(() => { cargar(); }, []);
+
+  async function cargar() {
+    const [ts, cs, tk] = await Promise.all([listar('trabajos'), listar('clientes'), listar('tareas')]);
+    setTrabajos(ts); setClientes(cs); setTareas(tk); setCargando(false);
+  }
 
   const nombrePorId = (id) => { const c = clientes.find((x) => x.id === id); return c ? nombreCliente(c) : `Cliente #${id}`; };
-  const equipo = (t) => `${t.marca || ''} ${t.modelo || ''} · ${t.nro_serie || ''}`.trim();
-  const badgeEstado = (e) => e === 'Entregada' ? 'g' : e === 'Finalizada' ? 'b' : e === 'Esperando repuestos' ? 'a' : '';
+  const tareasDe = (tid) => tareas.filter((t) => t.trabajo_id === tid);
 
-  const valorCol = (t, key) => {
-    switch (key) {
-      case 'nro': return t.nro || '';
-      case 'tipo': return t.tipo || '';
-      case 'cliente': return nombrePorId(t.cliente_id).toLowerCase();
-      case 'equipo': return equipo(t).toLowerCase();
-      case 'ingreso': return t.ingreso || '';
-      case 'estado': return t.estado || '';
-      default: return '';
-    }
-  };
+  // Cada ticket lleva su contexto para validar las transiciones.
+  let items = trabajos.map((t) => ({
+    ...t,
+    estado: t.estado,
+    _ctx: { tareas: tareasDe(t.id), tieneInforme: Boolean(t.informe) },
+  }));
 
-  let filas = trabajos;
   const term = q.trim().toLowerCase();
   if (term) {
-    filas = filas.filter((t) =>
+    items = items.filter((t) =>
       (t.nro || '').toLowerCase().includes(term)
       || nombrePorId(t.cliente_id).toLowerCase().includes(term)
-      || equipo(t).toLowerCase().includes(term)
-      || (t.tipo || '').toLowerCase().includes(term)
-      || (t.estado || '').toLowerCase().includes(term)
-    );
+      || `${t.marca || ''} ${t.modelo || ''} ${t.nro_serie || ''}`.toLowerCase().includes(term));
   }
-  if (desde) filas = filas.filter((t) => (t.ingreso || '') >= desde);
-  if (hasta) filas = filas.filter((t) => (t.ingreso || '') <= hasta);
-  const dir = sort.dir === 'asc' ? 1 : -1;
-  filas = [...filas].sort((a, b) => {
-    const va = valorCol(a, sort.col), vb = valorCol(b, sort.col);
-    if (va < vb) return -1 * dir;
-    if (va > vb) return 1 * dir;
-    return 0;
-  });
 
-  const toggleSort = (col) => setSort((s) => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'asc' });
-  const flecha = (col) => sort.col === col ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+  // Sin modal en el arrastre: los datos (técnico, informe) se cargan en el
+  // detalle. Acá solo validamos el candado al soltar.
+  const camposTransicion = () => [];
+
+  async function mover(item, hacia) {
+    if (item.estado === hacia) return;
+    const motivo = validarTransicion(hacia, item._ctx);
+    if (motivo) { toast(motivo, 'err'); return; }
+    try {
+      const cambios = { estado: hacia };
+      if (hacia === 'Finalizada') cambios.egreso = new Date().toISOString().slice(0, 10);
+      await actualizar('trabajos', item.id, cambios);
+      await comentarSistema('trabajo', item.id, `Estado cambiado a ${hacia}.`, usuarioActualId);
+      toast('Estado actualizado');
+      await cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo cambiar el estado', 'err');
+    }
+  }
 
   return (
     <div>
-      <PageHeader titulo="Service y reparación" sub={`${filas.length} de ${trabajos.length} trabajos`}>
-        <button className="btn" onClick={() => navigate('/service/nuevo')}><Icon name="plus" size={16} /> Ingresar drone</button>
+      <PageHeader titulo="Service y reparación"
+        sub="Arrastrá los tickets para cambiar de estado. Tocá uno para ver el detalle.">
+        <button className="btn" onClick={() => navigate('/service/nuevo')}>Ingresar drone</button>
       </PageHeader>
 
       {!cargando && trabajos.length > 0 && (
-        <div className="card card-pad" style={{ marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div className="field" style={{ margin: 0, flex: '1 1 260px' }}>
+        <div className="card card-pad" style={{ marginBottom: 14 }}>
+          <div className="field" style={{ margin: 0 }}>
             <label>Buscar</label>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="N°, cliente, equipo, tipo o estado" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="N°, cliente o equipo" />
           </div>
-          <div className="field" style={{ margin: 0 }}>
-            <label>Ingreso desde</label>
-            <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
-          </div>
-          <div className="field" style={{ margin: 0 }}>
-            <label>Ingreso hasta</label>
-            <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
-          </div>
-          {(q || desde || hasta) && (
-            <button className="btn ghost sm" onClick={() => { setQ(''); setDesde(''); setHasta(''); }}>Limpiar</button>
-          )}
         </div>
       )}
 
       {cargando ? <Empty>Cargando…</Empty> : trabajos.length === 0 ? (
         <Empty>Todavía no hay trabajos. Ingresá un drone al taller.</Empty>
-      ) : filas.length === 0 ? (
-        <Empty>Ningún trabajo coincide con la búsqueda o el filtro.</Empty>
       ) : (
-        <div className="card table-wrap">
-          <table>
-            <thead>
-              <tr>
-                {COLS.map((c) => (
-                  <th key={c.key} onClick={() => toggleSort(c.key)} style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
-                    {c.label}{flecha(c.key)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filas.map((t) => (
-                <tr key={t.id} className="clickable" onClick={() => navigate(`/service/${t.id}`)}>
-                  <td className="strong">{t.nro}</td>
-                  <td><span className="badge">{t.tipo}</span></td>
-                  <td>{nombrePorId(t.cliente_id)}</td>
-                  <td>{t.marca} {t.modelo} · {t.nro_serie}</td>
-                  <td>{fmtFecha(t.ingreso)}</td>
-                  <td><span className={'badge ' + badgeEstado(t.estado)}>{t.estado}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Board
+          estados={ESTADOS}
+          items={items}
+          camposTransicion={camposTransicion}
+          onMover={mover}
+          onCardClick={(t) => navigate(`/service/${t.id}`)}
+          render={(t) => (
+            <div>
+              <div className="kcard-t">{t.nro} · {t.tipo}</div>
+              <div className="kcard-s">{nombrePorId(t.cliente_id)}</div>
+              <div className="kcard-s muted">{t.marca} {t.modelo} · {t.nro_serie}</div>
+            </div>
+          )}
+        />
       )}
     </div>
   );

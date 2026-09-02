@@ -4,14 +4,16 @@ import { obtener, listar, crear, actualizar, eliminar } from '../../lib/db';
 import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO } from '../../shared/ui.jsx';
 import { usuariosConRol } from '../../shared/permisos';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
+import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
+import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
-
-const ESTADOS = ['Ingresada', 'En diagnóstico', 'En reparación', 'Esperando repuestos', 'Finalizada', 'Entregada'];
+import { ESTADOS_SERVICE, validarTransicion } from './service.js';
 
 export default function TrabajoDetalle() {
   const { id } = useParams();
   const toast = useToast();
+  const { usuarioActualId } = useAuth();
   const [trabajo, setTrabajo] = useState(null);
   const [cliente, setCliente] = useState(null);
   const [tareas, setTareas] = useState([]);
@@ -34,23 +36,23 @@ export default function TrabajoDetalle() {
   if (!trabajo) return <Empty>Cargando…</Empty>;
 
   const cerrado = trabajo.estado === 'Finalizada' || trabajo.estado === 'Entregada';
-  const idxEstado = ESTADOS.indexOf(trabajo.estado);
+  const idxEstado = ESTADOS_SERVICE.indexOf(trabajo.estado);
 
   async function cambiarEstado(nuevo) {
-    // Regla: no finalizar sin informe técnico.
-    if (nuevo === 'Finalizada' && !trabajo.informe) {
-      toast('No se puede finalizar sin el informe técnico', 'err'); return;
-    }
+    // Candados de transición (misma regla que el tablero).
+    const motivo = validarTransicion(nuevo, { tareas, tieneInforme: Boolean(trabajo.informe) });
+    if (motivo) { toast(motivo, 'err'); return; }
     const cambios = { estado: nuevo };
     if (nuevo === 'Finalizada') cambios.egreso = hoyISO();
     await actualizar('trabajos', id, cambios);
-    await comentarSistema('trabajo', id, `Estado cambiado a ${nuevo}.`);
+    await comentarSistema('trabajo', id, `Estado cambiado a ${nuevo}.`, usuarioActualId);
     toast('Estado actualizado');
     cargar();
   }
 
   async function adjuntarInforme() {
     await actualizar('trabajos', id, { informe: `informe_${trabajo.nro.toLowerCase().replace('-', '')}.pdf` });
+    await comentarSistema('trabajo', id, 'Se adjuntó el informe técnico.', usuarioActualId);
     toast('Informe técnico adjunto'); cargar();
   }
 
@@ -62,14 +64,14 @@ export default function TrabajoDetalle() {
       </PageHeader>
 
       <div className="stepbar">
-        {ESTADOS.map((e, i) => (
+        {ESTADOS_SERVICE.map((e, i) => (
           <div key={e} className={'step' + (i < idxEstado ? ' done' : i === idxEstado ? ' cur' : '')} style={{ minWidth: 70, fontSize: 11 }}>{e}</div>
         ))}
       </div>
 
-      {!cerrado && (
+      {trabajo.estado !== 'Entregada' && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-          {ESTADOS.filter((e) => e !== trabajo.estado).map((e) => (
+          {ESTADOS_SERVICE.filter((e) => e !== trabajo.estado).map((e) => (
             <button key={e} className="btn ghost sm" onClick={() => cambiarEstado(e)}>→ {e}</button>
           ))}
         </div>
@@ -77,8 +79,8 @@ export default function TrabajoDetalle() {
 
       <div className="two" style={{ marginTop: 16 }}>
         <div>
-          <TareasCard trabajoId={id} tareas={tareas} tecnicos={tecnicos} cerrado={cerrado} recargar={cargar} toast={toast} />
-          <RepuestosCard trabajoId={id} repuestos={repuestos} cerrado={cerrado} recargar={cargar} toast={toast} />
+          <TareasCard trabajoId={id} tareas={tareas} tecnicos={tecnicos} cerrado={cerrado} recargar={cargar} toast={toast} usuarioActualId={usuarioActualId} />
+          <RepuestosCard trabajoId={id} repuestos={repuestos} cerrado={cerrado} recargar={cargar} toast={toast} usuarioActualId={usuarioActualId} />
           <Comentarios entidad="trabajo" refId={trabajo.id} />
         </div>
 
@@ -113,38 +115,52 @@ export default function TrabajoDetalle() {
   );
 }
 
-function TareasCard({ trabajoId, tareas, tecnicos, cerrado, recargar, toast }) {
-  const [editando, setEditando] = useState(null);
-  const nombreTec = (id) => tecnicos.find((t) => t.id === id)?.nombre || '—';
+function TareasCard({ trabajoId, tareas, tecnicos, cerrado, recargar, toast, usuarioActualId }) {
+  const [modal, setModal] = useState(null); // {} nuevo | tarea (editar) | null
+  const nombreTec = (id) => tecnicos.find((t) => t.id === id)?.nombre || '— sin asignar —';
 
-  async function agregar() {
-    await crear('tareas', { trabajo_id: Number(trabajoId), descripcion: 'Nueva tarea', tecnico_id: tecnicos[0]?.id || null, horas: 0, estado: 'Pendiente' });
-    toast('Tarea agregada'); recargar();
+  const campos = [
+    { name: 'descripcion', label: 'Descripción de la tarea', type: 'text', required: true, full: true, placeholder: 'Ej: Cambio de motor M3' },
+    { name: 'tecnico_id', label: 'Técnico', type: 'select', options: tecnicos.map((t) => ({ value: t.id, label: t.nombre })) },
+    { name: 'horas', label: 'Horas', type: 'number' },
+    { name: 'estado', label: 'Estado', type: 'select', options: ['Pendiente', 'Hecha'], default: 'Pendiente' },
+  ];
+
+  async function guardar(valores) {
+    const datos = {
+      descripcion: valores.descripcion,
+      tecnico_id: valores.tecnico_id ? Number(valores.tecnico_id) : null,
+      horas: valores.horas ? Number(valores.horas) : 0,
+      estado: valores.estado || 'Pendiente',
+    };
+    try {
+      if (modal && modal.id) await actualizar('tareas', modal.id, datos);
+      else await crear('tareas', { trabajo_id: Number(trabajoId), ...datos });
+      await comentarSistema('trabajo', trabajoId, `Tarea ${modal && modal.id ? 'actualizada' : 'agregada'}: "${valores.descripcion}".`, usuarioActualId);
+      setModal(null); toast('Tarea guardada'); recargar();
+    } catch (e) { console.error(e); toast('No se pudo guardar la tarea', 'err'); }
   }
-  async function guardar(t, cambios) { await actualizar('tareas', t.id, cambios); setEditando(null); toast('Tarea actualizada'); recargar(); }
   async function borrar(t) { await eliminar('tareas', t.id); toast('Tarea eliminada'); recargar(); }
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-h">
         <span className="grow">Tareas ({tareas.length})</span>
-        {!cerrado && <button className="btn ghost sm" onClick={agregar}>+ Tarea</button>}
+        {!cerrado && <button className="btn ghost sm" onClick={() => setModal({})}>+ Tarea</button>}
       </div>
       <div className="table-wrap">
         {tareas.length === 0 ? <Empty>Sin tareas.</Empty> : (
           <table>
             <thead><tr><th>Tarea</th><th>Técnico</th><th>Horas</th><th>Estado</th>{!cerrado && <th></th>}</tr></thead>
             <tbody>
-              {tareas.map((t) => editando === t.id ? (
-                <EditTareaRow key={t.id} t={t} tecnicos={tecnicos} onGuardar={guardar} onCancelar={() => setEditando(null)} />
-              ) : (
+              {tareas.map((t) => (
                 <tr key={t.id}>
                   <td className="strong">{t.descripcion}</td>
                   <td>{nombreTec(t.tecnico_id)}</td>
                   <td>{t.horas ? t.horas + ' h' : '—'}</td>
                   <td><span className={'badge ' + (t.estado === 'Hecha' ? 'g' : 'a')}>{t.estado}</span></td>
                   {!cerrado && <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                    <button className="ibtn" onClick={() => setEditando(t.id)}><Icon name="edit" size={14} /></button>
+                    <button className="ibtn" onClick={() => setModal(t)}><Icon name="edit" size={14} /></button>
                     <button className="ibtn del" onClick={() => borrar(t)}><Icon name="del" size={14} /></button>
                   </td>}
                 </tr>
@@ -153,51 +169,61 @@ function TareasCard({ trabajoId, tareas, tecnicos, cerrado, recargar, toast }) {
           </table>
         )}
       </div>
+      {modal && (
+        <ModalCampos
+          titulo={modal.id ? 'Editar tarea' : 'Agregar tarea'}
+          campos={campos} valoresIniciales={modal}
+          textoConfirmar={modal.id ? 'Guardar cambios' : 'Agregar tarea'}
+          onConfirm={guardar} onCancel={() => setModal(null)}
+        />
+      )}
     </div>
   );
 }
 
-function EditTareaRow({ t, tecnicos, onGuardar, onCancelar }) {
-  const [tec, setTec] = useState(t.tecnico_id || '');
-  const [horas, setHoras] = useState(t.horas);
-  const [estado, setEstado] = useState(t.estado);
-  return (
-    <tr style={{ background: 'var(--brand-bg)' }}>
-      <td className="strong">{t.descripcion}</td>
-      <td><select value={tec} onChange={(e) => setTec(e.target.value)}>{tecnicos.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}</select></td>
-      <td><input type="number" step="0.5" value={horas} onChange={(e) => setHoras(e.target.value)} style={{ width: 64 }} /></td>
-      <td><select value={estado} onChange={(e) => setEstado(e.target.value)}><option>Pendiente</option><option>Hecha</option></select></td>
-      <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-        <button className="ibtn ok" onClick={() => onGuardar(t, { tecnico_id: Number(tec), horas: Number(horas), estado })}><Icon name="check" size={14} /></button>
-        <button className="ibtn" onClick={onCancelar}>✕</button>
-      </td>
-    </tr>
-  );
-}
+function RepuestosCard({ trabajoId, repuestos, cerrado, recargar, toast, usuarioActualId }) {
+  const [modal, setModal] = useState(null);
 
-function RepuestosCard({ trabajoId, repuestos, cerrado, recargar, toast }) {
-  const [editando, setEditando] = useState(null);
-  async function agregar() {
-    await crear('repuestos', { trabajo_id: Number(trabajoId), articulo: 'Nuevo repuesto', cantidad: 1, pieza_vieja: '', pieza_nueva: '', garantia: false, registrado: false });
-    toast('Repuesto agregado'); recargar();
+  const campos = [
+    { name: 'articulo', label: 'Artículo', type: 'text', required: true, full: true, placeholder: 'Ej: Motor M3' },
+    { name: 'cantidad', label: 'Cantidad', type: 'number', default: '1' },
+    { name: 'pieza_vieja', label: 'N° pieza vieja', type: 'text' },
+    { name: 'pieza_nueva', label: 'N° pieza nueva', type: 'text' },
+    { name: 'garantia', label: 'En garantía', type: 'select', options: ['No', 'Sí'], default: 'No' },
+    { name: 'registrado', label: 'Registrado', type: 'select', options: ['No', 'Sí'], default: 'No' },
+  ];
+
+  async function guardar(valores) {
+    const datos = {
+      articulo: valores.articulo,
+      cantidad: valores.cantidad ? Number(valores.cantidad) : 1,
+      pieza_vieja: valores.pieza_vieja || '', pieza_nueva: valores.pieza_nueva || '',
+      garantia: valores.garantia === 'Sí', registrado: valores.registrado === 'Sí',
+    };
+    try {
+      if (modal && modal.id) await actualizar('repuestos', modal.id, datos);
+      else await crear('repuestos', { trabajo_id: Number(trabajoId), ...datos });
+      await comentarSistema('trabajo', trabajoId, `Repuesto ${modal && modal.id ? 'actualizado' : 'agregado'}: "${valores.articulo}".`, usuarioActualId);
+      setModal(null); toast('Repuesto guardado'); recargar();
+    } catch (e) { console.error(e); toast('No se pudo guardar el repuesto', 'err'); }
   }
-  async function guardar(r, cambios) { await actualizar('repuestos', r.id, cambios); setEditando(null); toast('Repuesto actualizado'); recargar(); }
   async function borrar(r) { await eliminar('repuestos', r.id); toast('Repuesto eliminado'); recargar(); }
+
+  // Al editar, mapeamos los booleanos a Sí/No para el select.
+  const abrirEdicion = (r) => setModal({ ...r, garantia: r.garantia ? 'Sí' : 'No', registrado: r.registrado ? 'Sí' : 'No' });
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-h">
         <span className="grow">Repuestos ({repuestos.length})</span>
-        {!cerrado && <button className="btn ghost sm" onClick={agregar}>+ Repuesto</button>}
+        {!cerrado && <button className="btn ghost sm" onClick={() => setModal({})}>+ Repuesto</button>}
       </div>
       <div className="table-wrap">
         {repuestos.length === 0 ? <Empty>Sin repuestos.</Empty> : (
           <table>
             <thead><tr><th>Artículo</th><th>Cant.</th><th>Vieja</th><th>Nueva</th><th>Gar.</th>{!cerrado && <th></th>}</tr></thead>
             <tbody>
-              {repuestos.map((r) => editando === r.id ? (
-                <EditRepRow key={r.id} r={r} onGuardar={guardar} onCancelar={() => setEditando(null)} />
-              ) : (
+              {repuestos.map((r) => (
                 <tr key={r.id}>
                   <td className="strong">{r.articulo}</td>
                   <td>{r.cantidad}</td>
@@ -205,7 +231,7 @@ function RepuestosCard({ trabajoId, repuestos, cerrado, recargar, toast }) {
                   <td>{r.pieza_nueva || '—'}</td>
                   <td>{r.garantia ? <span className="badge g">Sí</span> : <span className="badge">No</span>}</td>
                   {!cerrado && <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                    <button className="ibtn" onClick={() => setEditando(r.id)}><Icon name="edit" size={14} /></button>
+                    <button className="ibtn" onClick={() => abrirEdicion(r)}><Icon name="edit" size={14} /></button>
                     <button className="ibtn del" onClick={() => borrar(r)}><Icon name="del" size={14} /></button>
                   </td>}
                 </tr>
@@ -214,23 +240,15 @@ function RepuestosCard({ trabajoId, repuestos, cerrado, recargar, toast }) {
           </table>
         )}
       </div>
+      {modal && (
+        <ModalCampos
+          titulo={modal.id ? 'Editar repuesto' : 'Agregar repuesto'}
+          campos={campos} valoresIniciales={modal}
+          textoConfirmar={modal.id ? 'Guardar cambios' : 'Agregar repuesto'}
+          onConfirm={guardar} onCancel={() => setModal(null)}
+        />
+      )}
     </div>
-  );
-}
-
-function EditRepRow({ r, onGuardar, onCancelar }) {
-  const [gar, setGar] = useState(r.garantia ? 'Sí' : 'No');
-  const [reg, setReg] = useState(r.registrado ? 'Sí' : 'No');
-  return (
-    <tr style={{ background: 'var(--brand-bg)' }}>
-      <td className="strong">{r.articulo}</td><td>{r.cantidad}</td>
-      <td>{r.pieza_vieja || '—'}</td><td>{r.pieza_nueva || '—'}</td>
-      <td><select value={gar} onChange={(e) => setGar(e.target.value)}><option>Sí</option><option>No</option></select></td>
-      <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-        <button className="ibtn ok" onClick={() => onGuardar(r, { garantia: gar === 'Sí', registrado: reg === 'Sí' })}><Icon name="check" size={14} /></button>
-        <button className="ibtn" onClick={onCancelar}>✕</button>
-      </td>
-    </tr>
   );
 }
 
