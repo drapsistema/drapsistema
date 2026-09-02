@@ -140,6 +140,21 @@ export async function generarPostventa(ventaId) {
   return data;
 }
 
+// ---- NUMERACIÓN DE SERVICE (OT / remito) ----
+// Pide el próximo número correlativo a la función SECURITY DEFINER
+// `siguiente_nro_trabajo` (atómica, y habilitada para técnicos).
+export async function siguienteNroTrabajo(tipo) {
+  if (modoDemo) {
+    const cfg = (demoStore.configuracion || []).find((c) => c.id === 1);
+    if (!cfg) return tipo === 'Service' ? 'OT-0001' : 'R-000001';
+    if (tipo === 'Service') { cfg.ot_actual = (cfg.ot_actual || 0) + 1; return 'OT-' + String(cfg.ot_actual).padStart(4, '0'); }
+    cfg.rem_actual = (cfg.rem_actual || 0) + 1; return 'R-' + String(cfg.rem_actual).padStart(6, '0');
+  }
+  const { data, error } = await supabase.rpc('siguiente_nro_trabajo', { p_tipo: tipo });
+  if (error) throw error;
+  return data;
+}
+
 // ============================================================
 // ADMINISTRACIÓN DE USUARIOS (vía Edge Function)
 // ------------------------------------------------------------
