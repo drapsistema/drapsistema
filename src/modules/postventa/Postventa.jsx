@@ -19,9 +19,9 @@ const COLS = [
   { key: 'venta', label: 'Venta' },
   { key: 'entrega', label: 'Entrega' },
   { key: 'dias', label: 'Días s/contacto' },
+  { key: 'semaforo', label: 'Semáforo' },
   { key: 'tareas', label: 'Tareas' },
   { key: 'visitas', label: 'Visitas' },
-  { key: 'semaforo', label: 'Semáforo' },
 ];
 
 export default function Postventa() {
@@ -180,13 +180,13 @@ export default function Postventa() {
                   <td>{vt(f.v.id)}</td>
                   <td>{fmtFecha(f.v.fecha_entrega)}</td>
                   <td>{f.s.dias}</td>
+                  <td><span className={'dot ' + f.s.cl} />{f.s.cl === 'g' ? 'Verde' : f.s.cl === 'a' ? 'Amarillo' : 'Rojo'}</td>
                   <td>{f.hechas}/{f.total}</td>
                   <td>
                     {f.visitaPendiente
                       ? <><span className="dot r" />Visita pendiente</>
                       : <><span className="dot g" />Al día</>}
                   </td>
-                  <td><span className={'dot ' + f.s.cl} />{f.s.cl === 'g' ? 'Verde' : f.s.cl === 'a' ? 'Amarillo' : 'Rojo'}</td>
                 </tr>
               ))}
             </tbody>

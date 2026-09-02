@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { obtener, listar, actualizar, generarPostventa } from '../../lib/db';
+import { obtener, listar, actualizar, crear, generarPostventa } from '../../lib/db';
 import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, diasDesde } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
+import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
@@ -24,6 +25,7 @@ export default function PostventaDetalle() {
   const [venta, setVenta] = useState(null);
   const [cliente, setCliente] = useState(null);
   const [tareas, setTareas] = useState([]);
+  const [nuevaTarea, setNuevaTarea] = useState(false);
 
   useEffect(() => { cargar(); }, [id]);
 
@@ -54,6 +56,23 @@ export default function PostventaDetalle() {
     } catch (e) {
       console.error(e);
       toast('No se pudo generar la postventa', 'err');
+    }
+  }
+
+  async function agregarTarea(valores) {
+    try {
+      await crear('tareas_postventa', {
+        venta_id: Number(id), hito: valores.hito, objetivo: valores.objetivo,
+        estado: 'Pendiente', fecha_real: null, observaciones: '', hectareas: null,
+        visita: false, visita_estado: '', visita_agenda: null, visita_real: null, responsable_id: null,
+      });
+      await comentarSistema('post', id, `Se agregó una tarea de contacto extra: "${valores.hito}".`, usuarioActualId);
+      setNuevaTarea(false);
+      toast('Tarea de contacto agregada');
+      cargar();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo agregar la tarea', 'err');
     }
   }
 
@@ -90,7 +109,10 @@ export default function PostventaDetalle() {
       <div className="two" style={{ marginTop: 8 }}>
         <div>
           <div className="card">
-            <div className="card-h">Tareas de contacto ({tareas.length})</div>
+            <div className="card-h">
+              <span className="grow">Tareas de contacto ({tareas.length})</span>
+              {tareas.length > 0 && <button className="btn ghost sm" onClick={() => setNuevaTarea(true)}>+ Tarea</button>}
+            </div>
             <div className="card-pad">
               {faltaGenerar ? (
                 <div className="aviso" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -114,6 +136,20 @@ export default function PostventaDetalle() {
           </div>
         </div>
       </div>
+
+      {nuevaTarea && (
+        <ModalCampos
+          titulo="Agregar tarea de contacto"
+          subtitulo="Además de las 3 obligatorias, podés sumar los contactos extra que hagan falta."
+          campos={[
+            { name: 'hito', label: 'Descripción del contacto', type: 'text', required: true, placeholder: 'Ej: 3 meses · Contacto extra' },
+            { name: 'objetivo', label: 'Fecha objetivo', type: 'date', required: true, default: hoyISO() },
+          ]}
+          textoConfirmar="Agregar tarea"
+          onConfirm={agregarTarea}
+          onCancel={() => setNuevaTarea(false)}
+        />
+      )}
     </div>
   );
 }
