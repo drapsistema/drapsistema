@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { obtener, listar, crear, actualizar } from '../../lib/db';
+import { obtener, listar, crear, actualizar, generarPostventa } from '../../lib/db';
 import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
@@ -8,9 +8,6 @@ import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import { rolesDe } from '../../shared/permisos';
 import Icon from '../../shared/Icon.jsx';
-
-// Hitos de postventa y días desde la entrega.
-const HITOS = [{ hito: '1 semana', dias: 7 }, { hito: '1 mes', dias: 30 }, { hito: '2 meses', dias: 60 }];
 
 // Campos de cada equipo cargado en la venta. Solo "Equipo" es obligatorio.
 const CAMPOS_EQUIPO = [
@@ -105,18 +102,10 @@ export default function VentaDetalle() {
       const yaTenia = entregada;
       await actualizar('ventas', id, { direccion_entrega: form.direccion_entrega, fecha_entrega: form.fecha_entrega, estado: 'Entregada' });
       if (!yaTenia) {
-        // Las 3 tareas de postventa se crean EN PARALELO (antes era una por
-        // una y por eso demoraba). Con Promise.all es un solo ida y vuelta.
-        const base = new Date(form.fecha_entrega);
-        await Promise.all(HITOS.map((h) => {
-          const obj = new Date(base); obj.setDate(obj.getDate() + h.dias);
-          return crear('tareas_postventa', {
-            venta_id: Number(id), hito: h.hito, objetivo: obj.toISOString().slice(0, 10),
-            estado: 'Pendiente', fecha_real: '', observaciones: '', hectareas: null,
-            visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5,
-          });
-        }));
-        await comentarSistema('venta', id, 'Entrega cargada. Se generaron 3 tareas de postventa.', usuarioActualId);
+        // La postventa la genera una función de la base (por fuera de RLS),
+        // así funciona la guarde quien la guarde y sin el bug de fecha vacía.
+        const n = await generarPostventa(id);
+        await comentarSistema('venta', id, `Entrega cargada.${n ? ` Se generaron ${n} tareas de postventa.` : ''}`, usuarioActualId);
         toast('Entrega guardada · postventa generada');
       } else {
         await comentarSistema('venta', id, 'Entrega actualizada.', usuarioActualId);
