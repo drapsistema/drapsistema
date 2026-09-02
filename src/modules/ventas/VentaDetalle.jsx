@@ -64,6 +64,11 @@ export default function VentaDetalle() {
   const entregada = Boolean(venta.fecha_entrega);
   const cancelada = venta.estado === 'Cancelada';
   const puedeCancelar = !entregada && !cancelada && esAdmin;
+  // La venta se bloquea cuando está cobrada Y facturada: a partir de ahí
+  // solo un admin edita sus datos (integridad de lo ya cerrado). Antes de
+  // eso, el vendedor (o tercerizado) puede operarla normalmente.
+  const bloqueada = Boolean(venta.cobrado && venta.registrado);
+  const puedeEditar = esAdmin || !bloqueada;
 
   // Vendedor de la venta y si es tercerizado (para la comisión).
   const vendedorVenta = usuarios.find((u) => u.id === venta.vendedor_id) || null;
@@ -129,7 +134,7 @@ export default function VentaDetalle() {
   async function toggleCobro(campo) {
     const nuevo = !venta[campo];
     await actualizar('ventas', id, { [campo]: nuevo });
-    await comentarSistema('venta', id, `${campo === 'cobrado' ? 'Cobrado' : 'Registrado'} marcado como ${nuevo ? 'Sí' : 'No'}.`, usuarioActualId);
+    await comentarSistema('venta', id, `${campo === 'cobrado' ? 'Cobrado' : 'Facturado'} marcado como ${nuevo ? 'Sí' : 'No'}.`, usuarioActualId);
     cargar();
   }
 
@@ -181,8 +186,8 @@ export default function VentaDetalle() {
           <a onClick={() => navigate('/postventa')} style={{ marginLeft: 8 }}>Ver postventa →</a>
         </div>
       )}
-      {!esAdmin && (
-        <div className="aviso">Estás viendo la venta en modo lectura. Los datos de la venta los edita un administrador.</div>
+      {bloqueada && !esAdmin && (
+        <div className="aviso">Esta venta ya está cobrada y facturada: sus datos quedaron bloqueados para mantener la integridad. Solo un administrador puede modificarlos.</div>
       )}
 
       <div className="two" style={{ marginTop: 16 }}>
@@ -190,7 +195,7 @@ export default function VentaDetalle() {
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-h">
               <span className="grow">Productos activados ({productos.length})</span>
-              {esAdmin && !cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal({})}>+ Equipo</button>}
+              {puedeEditar && !cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal({})}>+ Equipo</button>}
             </div>
             <div className="card-pad">
               {productos.length === 0 ? <Empty>Sin equipos cargados.</Empty> : (
@@ -199,7 +204,7 @@ export default function VentaDetalle() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="strong grow">{p.equipo || p.modelo || 'Equipo sin nombre'}</span>
                       {p.activado && <span className="badge g">Activado</span>}
-                      {esAdmin && !cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal(p)}>Editar</button>}
+                      {puedeEditar && !cancelada && <button className="btn ghost sm" onClick={() => setEquipoModal(p)}>Editar</button>}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px', marginTop: 6 }}>
                       {CAMPOS_EQUIPO
@@ -216,8 +221,8 @@ export default function VentaDetalle() {
             </div>
           </div>
 
-          {/* Entrega: editable solo para admin; lectura para el resto */}
-          {esAdmin && !cancelada ? (
+          {/* Entrega: editable mientras la venta no esté bloqueada; lectura si sí */}
+          {puedeEditar && !cancelada ? (
             <div className="card">
               <div className="card-h">Entrega</div>
               <div className="card-pad">
@@ -282,24 +287,24 @@ export default function VentaDetalle() {
             </div>
           )}
 
-          {/* Cobro: editable solo admin; lectura para el resto */}
+          {/* Cobro / Facturación: editable mientras no esté bloqueada; lectura si sí */}
           {!cancelada && (
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-h">Cobro</div>
               <div className="card-pad">
-                {esAdmin ? (
+                {puedeEditar ? (
                   <>
                     <label style={{ display: 'flex', gap: 8, marginBottom: 10, cursor: 'pointer' }}>
                       <input type="checkbox" checked={venta.cobrado} onChange={() => toggleCobro('cobrado')} /> Cobrado
                     </label>
                     <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={venta.registrado} onChange={() => toggleCobro('registrado')} /> Registrado
+                      <input type="checkbox" checked={venta.registrado} onChange={() => toggleCobro('registrado')} /> Facturado
                     </label>
                   </>
                 ) : (
                   <>
                     <InfoRow k="Cobrado" v={venta.cobrado ? 'Sí' : 'No'} />
-                    <InfoRow k="Registrado" v={venta.registrado ? 'Sí' : 'No'} />
+                    <InfoRow k="Facturado" v={venta.registrado ? 'Sí' : 'No'} />
                   </>
                 )}
               </div>
