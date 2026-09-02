@@ -23,6 +23,9 @@ export default function Comercial() {
   const [clientes, setClientes] = useState([]);
   const [params] = useSearchParams();
   const filtroEtapa = params.get('etapa'); // viene del dashboard (KPI clickeable)
+  const [q, setQ] = useState('');
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -76,6 +79,12 @@ export default function Comercial() {
     return c ? nombreCliente(c) : `Cliente #${id}`;
   };
 
+  // Buscador + filtro temporal (por fecha de primer contacto).
+  const term = q.trim().toLowerCase();
+  if (term) items = items.filter((i) => nombrePorId(i.cliente_id).toLowerCase().includes(term) || (i.relevamiento || '').toLowerCase().includes(term));
+  if (desde) items = items.filter((i) => (i.fecha_contacto || '') >= desde);
+  if (hasta) items = items.filter((i) => (i.fecha_contacto || '') <= hasta);
+
   return (
     <div>
       <PageHeader titulo="CRM comercial"
@@ -89,6 +98,22 @@ export default function Comercial() {
           <a onClick={() => navigate('/comercial')} style={{ marginLeft: 8 }}>Ver todas</a>
         </div>
       )}
+
+      <div className="card card-pad" style={{ marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div className="field" style={{ margin: 0, flex: '1 1 240px' }}>
+          <label>Buscar</label>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cliente o relevamiento" />
+        </div>
+        <div className="field" style={{ margin: 0 }}>
+          <label>Contacto desde</label>
+          <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+        </div>
+        <div className="field" style={{ margin: 0 }}>
+          <label>Contacto hasta</label>
+          <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+        </div>
+        {(q || desde || hasta) && <button className="btn ghost sm" onClick={() => { setQ(''); setDesde(''); setHasta(''); }}>Limpiar</button>}
+      </div>
 
       <Board
         estados={ESTADOS}
