@@ -13,6 +13,7 @@ import Comercial from './modules/comercial/Comercial.jsx';
 import OportunidadDetalle from './modules/comercial/OportunidadDetalle.jsx';
 import OportunidadForm from './modules/comercial/OportunidadForm.jsx';
 import Ventas from './modules/ventas/Ventas.jsx';
+import EquiposActivados from './modules/ventas/EquiposActivados.jsx';
 import VentaDetalle from './modules/ventas/VentaDetalle.jsx';
 import Postventa from './modules/postventa/Postventa.jsx';
 import PostventaDetalle from './modules/postventa/PostventaDetalle.jsx';
@@ -59,6 +60,8 @@ export default function App() {
         <Route path="service" element={<ProtegerModulo modulo="service"><Service /></ProtegerModulo>} />
         <Route path="service/nuevo" element={<ProtegerModulo modulo="service"><TrabajoForm /></ProtegerModulo>} />
         <Route path="service/:id" element={<ProtegerModulo modulo="service"><TrabajoDetalle /></ProtegerModulo>} />
+
+        <Route path="equipos" element={<ProtegerModulo modulo="equipos"><EquiposActivados /></ProtegerModulo>} />
 
         <Route path="configuracion" element={<ProtegerModulo modulo="configuracion"><Configuracion /></ProtegerModulo>} />
         <Route path="configuracion/usuario-nuevo" element={<ProtegerModulo modulo="configuracion"><UsuarioForm /></ProtegerModulo>} />
