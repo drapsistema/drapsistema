@@ -16,6 +16,7 @@ const NAV = [
   { grupo: 'Operaciones', items: [
     { to: '/postventa', label: 'Postventa', icon: 'postventa', mod: 'postventa' },
     { to: '/service', label: 'Service y reparación', icon: 'service', mod: 'service' },
+    { to: '/equipos', label: 'Equipos activados', icon: 'ventas', mod: 'equipos' },
   ]},
   { grupo: 'Sistema', items: [
     { to: '/configuracion', label: 'Configuración', icon: 'config', mod: 'configuracion' },
@@ -25,6 +26,7 @@ const NAV = [
 const TITULOS = {
   '/dashboard': 'Dashboard', '/clientes': 'Clientes', '/comercial': 'CRM comercial',
   '/ventas': 'Ventas', '/postventa': 'Postventa', '/service': 'Service y reparación',
+  '/equipos': 'Equipos activados',
   '/configuracion': 'Configuración',
 };
 
@@ -38,13 +40,14 @@ export default function Layout() {
   return (
     <div className="layout">
       <aside className={'sidebar' + (menuAbierto ? ' open' : '')}>
-        <div className="sidebar-brand">
+        <NavLink to="/sin-acceso" className="sidebar-brand" style={{ textDecoration: 'none', color: 'inherit' }}
+          onClick={() => setMenuAbierto(false)}>
           <img className="sidebar-logo" src="/drap-mark.png" alt="DRAP" />
           <div>
             <b>DRAP</b>
             <div className="sub">Gestión integral</div>
           </div>
-        </div>
+        </NavLink>
         <nav className="sidebar-nav">
           {NAV.map((g) => {
             const items = g.items.filter((it) => modulos.has(it.mod));
