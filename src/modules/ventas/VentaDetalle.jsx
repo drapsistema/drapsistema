@@ -61,7 +61,7 @@ export default function VentaDetalle() {
   const entregada = Boolean(venta.fecha_entrega);
   const cancelada = venta.estado === 'Cancelada';
   const puedeCancelar = !entregada && !cancelada && esAdmin;
-  // La venta se bloquea cuando está cobrada Y facturada: a partir de ahí
+  // La venta se bloquea cuando está cobrada Y registrada: a partir de ahí
   // solo un admin edita sus datos (integridad de lo ya cerrado). Antes de
   // eso, el vendedor (o tercerizado) puede operarla normalmente.
   const bloqueada = Boolean(venta.cobrado && venta.registrado);
@@ -123,7 +123,7 @@ export default function VentaDetalle() {
   async function toggleCobro(campo) {
     const nuevo = !venta[campo];
     await actualizar('ventas', id, { [campo]: nuevo });
-    await comentarSistema('venta', id, `${campo === 'cobrado' ? 'Cobrado' : 'Facturado'} marcado como ${nuevo ? 'Sí' : 'No'}.`, usuarioActualId);
+    await comentarSistema('venta', id, `${campo === 'cobrado' ? 'Cobrado' : 'Registrado'} marcado como ${nuevo ? 'Sí' : 'No'}.`, usuarioActualId);
     cargar();
   }
 
@@ -176,7 +176,7 @@ export default function VentaDetalle() {
         </div>
       )}
       {bloqueada && !esAdmin && (
-        <div className="aviso">Esta venta ya está cobrada y facturada: sus datos quedaron bloqueados para mantener la integridad. Solo un administrador puede modificarlos.</div>
+        <div className="aviso">Esta venta ya está cobrada y registrada: sus datos quedaron bloqueados para mantener la integridad. Solo un administrador puede modificarlos.</div>
       )}
 
       <div className="two" style={{ marginTop: 16 }}>
@@ -287,13 +287,13 @@ export default function VentaDetalle() {
                       <input type="checkbox" checked={venta.cobrado} onChange={() => toggleCobro('cobrado')} /> Cobrado
                     </label>
                     <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={venta.registrado} onChange={() => toggleCobro('registrado')} /> Facturado
+                      <input type="checkbox" checked={venta.registrado} onChange={() => toggleCobro('registrado')} /> Registrado
                     </label>
                   </>
                 ) : (
                   <>
                     <InfoRow k="Cobrado" v={venta.cobrado ? 'Sí' : 'No'} />
-                    <InfoRow k="Facturado" v={venta.registrado ? 'Sí' : 'No'} />
+                    <InfoRow k="Registrado" v={venta.registrado ? 'Sí' : 'No'} />
                   </>
                 )}
               </div>
