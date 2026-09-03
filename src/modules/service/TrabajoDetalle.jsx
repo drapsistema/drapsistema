@@ -114,7 +114,7 @@ export default function TrabajoDetalle() {
       .row{display:flex;gap:24px;font-size:13px;margin:3px 0}.k{color:#6b7686;min-width:120px}
       .diag{white-space:pre-wrap;font-size:13px;background:#f7f9fb;border:1px solid #eee;border-radius:6px;padding:10px}</style></head>
       <body>
-      <h1>Informe técnico · ${esc(trabajo.nro)}</h1>
+      <h1>Informe técnico ${cerrado ? '(final)' : '(parcial)'} · ${esc(trabajo.nro)}</h1>
       <div class="sub">DRAP · Dron Aplicaciones · generado ${fmtFecha(hoyISO())}</div>
       <h2>Datos</h2>
       <div class="row"><span class="k">Cliente</span><span>${esc(nombreCliente(cliente))}</span></div>
@@ -260,8 +260,15 @@ export default function TrabajoDetalle() {
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-h">Informe técnico</div>
               <div className="card-pad">
-                <div className="muted sm" style={{ marginBottom: 10 }}>Se genera en PDF y se descarga; no se guarda en la base.</div>
-                <button className="btn ghost full" onClick={descargarInforme}><Icon name="check" size={16} /> Descargar informe</button>
+                <div className="muted sm" style={{ marginBottom: 10 }}>
+                  {cerrado
+                    ? 'El trabajo está finalizado: este es el informe final.'
+                    : 'El trabajo aún no está finalizado: podés generar un informe parcial con lo cargado hasta ahora.'}
+                  {' '}Se genera en PDF y se descarga; no se guarda en la base.
+                </div>
+                <button className="btn ghost full" onClick={descargarInforme}>
+                  <Icon name="check" size={16} /> {cerrado ? 'Generar informe final' : 'Generar informe parcial'}
+                </button>
               </div>
             </div>
           )}
