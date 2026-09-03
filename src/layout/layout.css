@@ -1,71 +1,81 @@
 /* ============================================================
-   Layout: sidebar lateral + topbar. Responsive.
-   En desktop el sidebar queda fijo. En mobile se oculta y se
-   abre con el botón hamburguesa de la topbar.
+   DRAP · Layout (sidebar + header). Claro/oscuro por tokens.
    ============================================================ */
 
 .layout { display: flex; min-height: 100vh; }
 
 /* ---------- Sidebar ---------- */
 .sidebar {
-  width: 236px; background: var(--panel); border-right: 1px solid var(--line);
+  width: 244px; background: var(--panel); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; position: fixed; top: 0; bottom: 0; left: 0;
-  z-index: 40; transition: transform .25s ease;
+  z-index: 40; transition: transform .25s ease, background .2s ease, border-color .2s ease;
 }
-.sidebar-brand { display: flex; align-items: center; gap: 11px; padding: 18px 20px; }
-.sidebar-logo {
-  width: 38px; height: 38px; border-radius: 9px;
-  object-fit: cover; display: block; flex: none;
-}
-.sidebar-brand b { font-size: 16px; }
+.sidebar-brand { display: flex; align-items: center; gap: 11px; padding: 20px; }
+.sidebar-logo { width: 40px; height: 40px; border-radius: 11px; object-fit: cover; display: block; flex: none; }
+.sidebar-brand b { font-size: 16px; color: var(--ink); }
 .sidebar-brand .sub { font-size: 11px; color: var(--ink-3); }
 
-.sidebar-nav { padding: 8px 12px; overflow-y: auto; flex: 1; }
-.nav-group { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
-  color: var(--ink-3); padding: 14px 10px 6px; }
+.sidebar-nav { padding: 8px 14px; overflow-y: auto; flex: 1; }
+.nav-group { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink-3); font-weight: 600; padding: 16px 10px 7px; }
 .nav-item {
-  display: flex; align-items: center; gap: 11px; padding: 9px 11px;
-  border-radius: 8px; color: var(--ink-2); font-size: 13.5px; font-weight: 500;
-  cursor: pointer; margin-bottom: 2px;
+  display: flex; align-items: center; gap: 11px; padding: 10px 12px;
+  border-radius: 11px; color: var(--ink-2); font-size: 13.5px; font-weight: 500;
+  cursor: pointer; margin-bottom: 3px; transition: background .12s, color .12s;
 }
-.nav-item:hover { background: var(--panel-2); }
-.nav-item.active { background: var(--brand-bg); color: var(--brand-ink); }
+.nav-item:hover { background: var(--panel-2); color: var(--ink); }
+.nav-item.active { background: var(--brand-bg); color: var(--brand-ink); font-weight: 600; }
+.nav-item.active svg { color: var(--brand-ink); }
 .nav-item svg { flex: none; }
 
 /* ---------- Contenido ---------- */
-.main { flex: 1; margin-left: 236px; display: flex; flex-direction: column; min-width: 0; }
+.main { flex: 1; margin-left: 244px; display: flex; flex-direction: column; min-width: 0; }
 
 .topbar {
-  height: 56px; background: var(--panel); border-bottom: 1px solid var(--line);
-  display: flex; align-items: center; gap: 12px; padding: 0 20px;
-  position: sticky; top: 0; z-index: 30;
+  height: 62px; background: var(--panel); border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 12px; padding: 0 22px;
+  position: sticky; top: 0; z-index: 30; transition: background .2s ease, border-color .2s ease;
 }
-.topbar .crumb { font-size: 13px; color: var(--ink-3); }
+.topbar .crumb { font-size: 14px; color: var(--ink-3); }
 .topbar .crumb b { color: var(--ink); font-weight: 600; }
 .hamburger { display: none; background: none; border: none; color: var(--ink-2); cursor: pointer; padding: 4px; }
 
-.content { padding: 22px; flex: 1; max-width: 1200px; width: 100%; }
+/* saludo + avatar + toggle a la derecha del header */
+.topbar-user { display: flex; align-items: center; gap: 10px; }
+.saludo { font-size: 13.5px; color: var(--ink-3); }
+.saludo b { color: var(--brand-ink); font-weight: 600; }
+.tb-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--brand-bg); color: var(--brand-ink); font-weight: 600; font-size: 12.5px; display: flex; align-items: center; justify-content: center; flex: none; }
+.tema-toggle {
+  width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink-2); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s;
+}
+.tema-toggle:hover { background: var(--panel-2); color: var(--ink); }
+.tema-toggle svg { stroke: currentColor; fill: none; stroke-width: 2; }
+
+.content { padding: 26px; flex: 1; max-width: 1240px; width: 100%; }
 
 /* backdrop para cerrar el menú en mobile */
-.backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 35; }
+.backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 35; }
 
 /* ============================================================
    RESPONSIVE
    ============================================================ */
 @media (max-width: 900px) {
-  .sidebar { transform: translateX(-100%); }
+  .sidebar { transform: translateX(-100%); box-shadow: var(--shadow-hover); }
   .sidebar.open { transform: translateX(0); }
   .main { margin-left: 0; }
   .hamburger { display: inline-flex; }
   .backdrop.show { display: block; }
   .content { padding: 16px; }
+  .saludo { display: none; } /* en mobile dejamos solo avatar + toggle */
 }
 
-/* ---------- Usuario en el sidebar ---------- */
-.sidebar-user { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); }
+/* ---------- Usuario en el sidebar (pie) ---------- */
+.sidebar-user { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--line); }
 .su-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--brand-bg); color: var(--brand-ink); font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center; flex: none; }
 .su-info { flex: 1; min-width: 0; }
 .su-nombre { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .su-rol { font-size: 11px; color: var(--ink-3); }
-.su-logout { background: none; border: 1px solid var(--line); border-radius: 7px; width: 30px; height: 30px; cursor: pointer; color: var(--ink-3); display: flex; align-items: center; justify-content: center; flex: none; }
+.su-logout { background: none; border: 1px solid var(--line); border-radius: 9px; width: 32px; height: 32px; cursor: pointer; color: var(--ink-3); display: flex; align-items: center; justify-content: center; flex: none; }
 .su-logout:hover { background: var(--panel-2); color: var(--red); border-color: var(--red); }
