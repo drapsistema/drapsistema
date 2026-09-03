@@ -2,7 +2,6 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <!-- viewport mobile-first: la app se adapta a cualquier dispositivo -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0A2624" />
 
@@ -12,6 +11,19 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Tipografía Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!-- Aplica el modo claro/oscuro guardado antes de pintar, para no ver un parpadeo -->
+    <script>
+      try {
+        var t = localStorage.getItem('drap-tema');
+        if (t) document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    </script>
 
     <title>DRAP · Gestión Comercial, Postventa y Service</title>
   </head>
