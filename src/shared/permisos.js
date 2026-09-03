@@ -59,7 +59,7 @@ export function esAdministrador(usuario) {
 // matriz: filas [{ rol, modulos: [ids] }]
 export function modulosVisibles(usuario, matriz) {
   if (esAdministrador(usuario)) {
-    return new Set([...MODULOS.map((m) => m.id), 'configuracion']);
+    return new Set([...MODULOS.map((m) => m.id), 'configuracion', 'equipos']);
   }
   const roles = rolesDe(usuario);
   const set = new Set();
