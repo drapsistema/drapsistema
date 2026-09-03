@@ -16,7 +16,7 @@ const NAV = [
   { grupo: 'Operaciones', items: [
     { to: '/postventa', label: 'Postventa', icon: 'postventa', mod: 'postventa' },
     { to: '/service', label: 'Service y reparación', icon: 'service', mod: 'service' },
-    { to: '/equipos', label: 'Equipos activados', icon: 'ventas', mod: 'equipos' },
+    { to: '/equipos', label: 'Equipos activados', icon: 'drone', mod: 'equipos' },
   ]},
   { grupo: 'Sistema', items: [
     { to: '/configuracion', label: 'Configuración', icon: 'config', mod: 'configuracion' },
