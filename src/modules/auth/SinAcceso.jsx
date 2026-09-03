@@ -10,6 +10,7 @@ const TARJETAS = [
   { id: 'ventas', label: 'Ventas', desc: 'Ventas, entregas y cobranza.', icon: 'ventas', to: '/ventas' },
   { id: 'postventa', label: 'Postventa', desc: 'Seguimiento y visitas técnicas.', icon: 'postventa', to: '/postventa' },
   { id: 'service', label: 'Service y reparación', desc: 'Órdenes de trabajo y remitos.', icon: 'service', to: '/service' },
+  { id: 'equipos', label: 'Equipos activados', desc: 'Equipos cargados en las ventas.', icon: 'ventas', to: '/equipos' },
   { id: 'configuracion', label: 'Configuración', desc: 'Usuarios, roles, permisos y parámetros.', icon: 'config', to: '/configuracion' },
 ];
 
