@@ -2,7 +2,7 @@
 -- CLIENTES: unificación de duplicados
 -- ------------------------------------------------------------
 -- Correr en Supabase -> SQL Editor (todo junto). Idempotente.
--- Requiere haber corrido antes clientes_cuit_opcional.sql.
+-- Requiere haber corrido antes clientes_cuit_opcional.sql y tanda2.sql.
 -- ============================================================
 
 
@@ -116,6 +116,11 @@ begin
   get diagnostics n_ventas = row_count;
   update trabajos      set cliente_id = p_destino where cliente_id = p_origen;
   get diagnostics n_trabajos = row_count;
+  -- Postventas sin venta (requiere tanda2.sql, que agrega la columna).
+  update tareas_postventa set cliente_id = p_destino where cliente_id = p_origen;
+  insert into comentarios (entidad, ref_id, texto, fecha, autor_id)
+    select 'post-cli', p_destino, v_texto, current_date, app_uid()
+    where exists (select 1 from tareas_postventa where cliente_id = p_destino and venta_id is null);
 
   -- El CUIT es único: primero se libera del origen, después pasa al destino.
   update clientes set activo = false, unificado_en = p_destino, cuit = null where id = p_origen;

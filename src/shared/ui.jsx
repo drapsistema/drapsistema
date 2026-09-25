@@ -35,6 +35,12 @@ export function nombreCliente(c) {
   return c.tipo === 'Persona física' ? `${c.nombre} ${c.apellido}`.trim() : c.razon_social;
 }
 
+// Número visible de una venta: el que cargó el usuario o el correlativo por id.
+export function nroVenta(v) {
+  if (!v) return '';
+  return v.numero || `VT-${String(v.id).padStart(4, '0')}`;
+}
+
 // Datos opcionales del cliente que conviene completar. Sin CUIT no se
 // puede descartar que el cliente esté duplicado en la base.
 export function datosFaltantesCliente(c) {

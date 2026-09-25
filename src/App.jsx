@@ -18,6 +18,7 @@ import EquiposActivados from './modules/ventas/EquiposActivados.jsx';
 import VentaDetalle from './modules/ventas/VentaDetalle.jsx';
 import Postventa from './modules/postventa/Postventa.jsx';
 import PostventaDetalle from './modules/postventa/PostventaDetalle.jsx';
+import PostventaForm from './modules/postventa/PostventaForm.jsx';
 import Service from './modules/service/Service.jsx';
 import TrabajoDetalle from './modules/service/TrabajoDetalle.jsx';
 import TrabajoForm from './modules/service/TrabajoForm.jsx';
@@ -58,6 +59,8 @@ export default function App() {
         <Route path="ventas/:id" element={<ProtegerModulo modulo="ventas"><VentaDetalle /></ProtegerModulo>} />
 
         <Route path="postventa" element={<ProtegerModulo modulo="postventa"><Postventa /></ProtegerModulo>} />
+        <Route path="postventa/nueva" element={<ProtegerModulo modulo="postventa"><PostventaForm /></ProtegerModulo>} />
+        <Route path="postventa/cliente/:clienteId" element={<ProtegerModulo modulo="postventa"><PostventaDetalle /></ProtegerModulo>} />
         <Route path="postventa/:id" element={<ProtegerModulo modulo="postventa"><PostventaDetalle /></ProtegerModulo>} />
 
         <Route path="service" element={<ProtegerModulo modulo="service"><Service /></ProtegerModulo>} />

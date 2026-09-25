@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listar, obtener } from '../../lib/db';
-import { PageHeader, Empty, nombreCliente, fmtFecha, diasDesde } from '../../shared/ui.jsx';
+import { PageHeader, Empty, nombreCliente, fmtFecha, diasDesde, nroVenta } from '../../shared/ui.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 // Semáforo por cliente: días desde el último contacto (umbrales del admin).
-function semaforo(venta, tareas, verde = 30, amarillo = 60) {
+// `desde` es la fecha de referencia si todavía no hubo contactos.
+function semaforo(desde, tareas, verde = 30, amarillo = 60) {
   const realizadas = tareas.filter((t) => t.estado === 'Realizada' && t.fecha_real);
-  const ultima = realizadas.map((t) => t.fecha_real).sort().pop() || venta.fecha_entrega;
-  const dias = diasDesde(ultima);
+  const ultima = realizadas.map((t) => t.fecha_real).sort().pop() || desde;
+  // Nunca negativo: una postventa recién cargada tiene su primera tarea en el futuro.
+  const dias = Math.max(0, diasDesde(ultima));
   const cl = dias <= verde ? 'g' : dias <= amarillo ? 'a' : 'r';
   return { dias, cl };
 }
@@ -50,10 +52,15 @@ export default function Postventa() {
   const entregadas = ventas.filter((v) => v.fecha_entrega && v.estado !== 'Cancelada');
   const nombrePorId = (id) => { const c = clientes.find((x) => x.id === id); return c ? nombreCliente(c) : `Cliente #${id}`; };
   const nombreVen = (id) => usuarios.find((u) => u.id === id)?.nombre || '— sin asignar —';
-  const tareasDe = (vid) => tareas.filter((t) => t.venta_id === vid);
   const ventaDe = (vid) => ventas.find((x) => x.id === vid);
-  const clienteDeTarea = (t) => { const v = ventaDe(t.venta_id); return v ? v.cliente_id : null; };
-  const vt = (idv) => `VT-${String(idv).padStart(4, '0')}`;
+
+  // Tareas sin venta: equipos comprados en otro lado, agrupadas por cliente.
+  const sinVenta = (t) => !t.venta_id && t.cliente_id;
+  const hermanasDe = (t) => (sinVenta(t)
+    ? tareas.filter((x) => sinVenta(x) && x.cliente_id === t.cliente_id)
+    : tareas.filter((x) => x.venta_id === t.venta_id));
+  const clienteDeTarea = (t) => (sinVenta(t) ? t.cliente_id : ventaDe(t.venta_id)?.cliente_id ?? null);
+  const rutaDeTarea = (t) => (sinVenta(t) ? `/postventa/cliente/${t.cliente_id}` : `/postventa/${t.venta_id}`);
 
   // Visitas ya realizadas (para calcular "desde la última visita").
   const visitasRealizadas = tareas.filter((t) => t.visita_estado === 'Realizada' && t.visita_real);
@@ -63,7 +70,7 @@ export default function Postventa() {
   };
   // Número de tarea de contacto (1, 2, 3) de la que se desprende una visita.
   const ordinalTarea = (t) => {
-    const hermanas = tareasDe(t.venta_id).slice().sort((a, b) => (a.objetivo || '').localeCompare(b.objetivo || '') || a.id - b.id);
+    const hermanas = hermanasDe(t).slice().sort((a, b) => (a.objetivo || '').localeCompare(b.objetivo || '') || a.id - b.id);
     const i = hermanas.findIndex((x) => x.id === t.id);
     return i >= 0 ? i + 1 : '—';
   };
@@ -71,23 +78,41 @@ export default function Postventa() {
   // Panel de visitas a coordinar (solicitadas o agendadas).
   const visitas = tareas.filter((t) => t.visita_estado === 'Solicitada' || t.visita_estado === 'Agendada');
 
-  // Filas de la tabla principal, con lo necesario para ordenar y filtrar.
-  const filasBase = entregadas.map((v) => {
-    const ts = tareasDe(v.id);
-    const s = semaforo(v, ts, sVerde, sAmarillo);
-    const hechas = ts.filter((t) => t.estado === 'Realizada').length;
+  const resumen = (ts, desdeRef) => ({
+    s: semaforo(desdeRef, ts, sVerde, sAmarillo),
+    hechas: ts.filter((t) => t.estado === 'Realizada').length,
+    total: ts.length,
     // Rojo si hay una visita AGENDADA sin atender; verde si no hay agendadas o ya se atendieron.
-    const visitaPendiente = ts.some((t) => t.visita_estado === 'Agendada');
-    return { v, s, hechas, total: ts.length, visitaPendiente, cliente: nombrePorId(v.cliente_id), vendedor: nombreVen(v.vendedor_id) };
+    visitaPendiente: ts.some((t) => t.visita_estado === 'Agendada'),
   });
+
+  // Filas de la tabla principal: una por venta entregada + una por cliente
+  // con postventa sin venta.
+  const filasVentas = entregadas.map((v) => ({
+    key: `v${v.id}`, to: `/postventa/${v.id}`,
+    cliente: nombrePorId(v.cliente_id), venta: nroVenta(v), vendedor: nombreVen(v.vendedor_id),
+    entrega: v.fecha_entrega,
+    ...resumen(tareas.filter((t) => t.venta_id === v.id), v.fecha_entrega),
+  }));
+  const clientesSinVenta = [...new Set(tareas.filter(sinVenta).map((t) => t.cliente_id))];
+  const filasSinVenta = clientesSinVenta.map((cid) => {
+    const ts = tareas.filter((t) => sinVenta(t) && t.cliente_id === cid);
+    const inicio = ts.map((t) => t.objetivo).filter(Boolean).sort()[0] || null;
+    return {
+      key: `c${cid}`, to: `/postventa/cliente/${cid}`, sinVenta: true,
+      cliente: nombrePorId(cid), venta: 'Sin venta', vendedor: '—', entrega: null,
+      ...resumen(ts, inicio),
+    };
+  });
+  const filasBase = [...filasVentas, ...filasSinVenta];
 
   const sev = (cl) => (cl === 'r' ? 2 : cl === 'a' ? 1 : 0);
   const valorCol = (f, key) => {
     switch (key) {
       case 'cliente': return f.cliente.toLowerCase();
-      case 'venta': return f.v.id;
+      case 'venta': return f.venta.toLowerCase();
       case 'vendedor': return f.vendedor.toLowerCase();
-      case 'entrega': return f.v.fecha_entrega || '';
+      case 'entrega': return f.entrega || '';
       case 'dias': return f.s.dias;
       case 'tareas': return f.total ? f.hechas / f.total : 0;
       case 'visitas': return f.visitaPendiente ? 1 : 0;
@@ -98,9 +123,10 @@ export default function Postventa() {
 
   let filas = filasBase;
   const term = q.trim().toLowerCase();
-  if (term) filas = filas.filter((f) => f.cliente.toLowerCase().includes(term) || vt(f.v.id).toLowerCase().includes(term) || f.vendedor.toLowerCase().includes(term));
-  if (desde) filas = filas.filter((f) => (f.v.fecha_entrega || '') >= desde);
-  if (hasta) filas = filas.filter((f) => (f.v.fecha_entrega || '') <= hasta);
+  if (term) filas = filas.filter((f) => f.cliente.toLowerCase().includes(term) || f.venta.toLowerCase().includes(term) || f.vendedor.toLowerCase().includes(term));
+  // El filtro por fecha de entrega deja afuera las postventas sin venta (no tienen entrega).
+  if (desde) filas = filas.filter((f) => (f.entrega || '') >= desde);
+  if (hasta) filas = filas.filter((f) => f.entrega && f.entrega <= hasta);
   const dir = sort.dir === 'asc' ? 1 : -1;
   filas = [...filas].sort((a, b) => {
     const va = valorCol(a, sort.col), vb = valorCol(b, sort.col);
@@ -116,7 +142,11 @@ export default function Postventa() {
 
   return (
     <div>
-      <PageHeader titulo="Postventa" sub="Semáforo por días desde el último contacto · 3 tareas por cliente entregado" />
+      <PageHeader titulo="Postventa" sub="Semáforo por días desde el último contacto · 3 tareas por cliente entregado">
+        <button className="btn" onClick={() => navigate('/postventa/nueva')}>
+          <Icon name="plus" size={16} /> Nueva postventa
+        </button>
+      </PageHeader>
 
       {visitas.length > 0 && (
         <div className="card" style={{ marginBottom: 16, borderColor: 'var(--amber)' }}>
@@ -128,11 +158,11 @@ export default function Postventa() {
               <thead><tr><th>Cliente</th><th>Tarea de contacto</th><th>Estado</th><th>Agendada</th><th>Última visita técnica</th></tr></thead>
               <tbody>
                 {visitas.map((t) => {
-                  const v = ventaDe(t.venta_id);
-                  const ult = ultimaVisitaDeCliente(clienteDeTarea(t));
+                  const cid = clienteDeTarea(t);
+                  const ult = ultimaVisitaDeCliente(cid);
                   return (
-                    <tr key={t.id} className="clickable" onClick={() => navigate(`/postventa/${t.venta_id}`)}>
-                      <td className="strong">{v ? nombrePorId(v.cliente_id) : '—'}</td>
+                    <tr key={t.id} className="clickable" onClick={() => navigate(rutaDeTarea(t))}>
+                      <td className="strong">{cid ? nombrePorId(cid) : '—'}</td>
                       <td>Tarea {ordinalTarea(t)} · {t.hito}</td>
                       <td><span className={'badge ' + (t.visita_estado === 'Agendada' ? 'b' : 'a')}>{t.visita_estado}</span></td>
                       <td>{t.visita_agenda ? fmtFecha(t.visita_agenda) : <span className="muted">sin fecha</span>}</td>
@@ -146,7 +176,7 @@ export default function Postventa() {
         </div>
       )}
 
-      {entregadas.length > 0 && (
+      {filasBase.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="field" style={{ margin: 0, flex: '1 1 260px' }}>
             <label>Buscar</label>
@@ -166,10 +196,10 @@ export default function Postventa() {
         </div>
       )}
 
-      {entregadas.length === 0 ? (
-        <Empty>Todavía no hay ventas entregadas. La postventa nace al cargar la entrega de una venta.</Empty>
+      {filasBase.length === 0 ? (
+        <Empty>Todavía no hay postventas. Nacen al cargar la entrega de una venta, o con “Nueva postventa” para equipos comprados en otro lado.</Empty>
       ) : filas.length === 0 ? (
-        <Empty>Ninguna venta coincide con la búsqueda o el filtro.</Empty>
+        <Empty>Ninguna postventa coincide con la búsqueda o el filtro.</Empty>
       ) : (
         <div className="card table-wrap">
           <table>
@@ -184,11 +214,11 @@ export default function Postventa() {
             </thead>
             <tbody>
               {filas.map((f) => (
-                <tr key={f.v.id} className="clickable" onClick={() => navigate(`/postventa/${f.v.id}`)}>
+                <tr key={f.key} className="clickable" onClick={() => navigate(f.to)}>
                   <td className="strong">{f.cliente}</td>
-                  <td>{vt(f.v.id)}</td>
+                  <td>{f.sinVenta ? <span className="badge">Sin venta</span> : f.venta}</td>
                   <td>{f.vendedor}</td>
-                  <td>{fmtFecha(f.v.fecha_entrega)}</td>
+                  <td>{f.entrega ? fmtFecha(f.entrega) : <span className="muted">—</span>}</td>
                   <td>{f.s.dias}</td>
                   <td><span className={'dot ' + f.s.cl} />{f.s.cl === 'g' ? 'Verde' : f.s.cl === 'a' ? 'Amarillo' : 'Rojo'}</td>
                   <td>{f.hechas}/{f.total}</td>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, crear, actualizar } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, AvisoClienteIncompleto } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, AvisoClienteIncompleto, nroVenta } from '../../shared/ui.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
@@ -10,7 +10,6 @@ const TABS = ['Datos y contactos', 'Historial comercial', 'Ventas', 'Postventa',
 // Helpers de formato/validación (mismos criterios que el alta de cliente).
 const soloNumeros = (s) => (s || '').replace(/\D/g, '');
 const mailValido = (m) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m);
-const vt = (id) => `VT-${String(id).padStart(4, '0')}`;
 
 export default function ClienteFicha() {
   const { id } = useParams();
@@ -33,19 +32,19 @@ export default function ClienteFicha() {
     listar('trabajos', { cliente_id: Number(id) }).then(setTrabajos).catch(() => setTrabajos([]));
     listar('ventas', { cliente_id: Number(id) }).then(async (vs) => {
       setVentas(vs);
-      // La postventa cuelga de la venta, no del cliente: filtramos las
-      // tareas cuyas ventas son de este cliente.
+      // Tareas de postventa del cliente: las de sus ventas y las cargadas
+      // directo al cliente (equipos comprados en otro lado).
       const ids = new Set(vs.map((v) => v.id));
       try {
         const todas = await listar('tareas_postventa');
-        setTareas(todas.filter((t) => ids.has(t.venta_id)));
+        setTareas(todas.filter((t) => ids.has(t.venta_id) || t.cliente_id === Number(id)));
       } catch { setTareas([]); }
     }).catch(() => setVentas([]));
   }, [id]);
 
   if (!cliente) return <Empty>Cargando…</Empty>;
 
-  const vtDe = (ventaId) => vt(ventaId);
+  const ventaPorId = (vid) => ventas.find((v) => v.id === vid);
 
   return (
     <div>
@@ -124,7 +123,7 @@ export default function ClienteFicha() {
               <tbody>
                 {ventas.map((v) => (
                   <tr key={v.id} className="clickable" onClick={() => navigate(`/ventas/${v.id}`)}>
-                    <td className="strong">{vt(v.id)}</td>
+                    <td className="strong">{nroVenta(v)}</td>
                     <td>{fmtFecha(v.fecha_ganada)}</td>
                     <td>{v.fecha_entrega ? fmtFecha(v.fecha_entrega) : '—'}</td>
                     <td>{v.estado}</td>
@@ -145,8 +144,9 @@ export default function ClienteFicha() {
               <thead><tr><th>Venta</th><th>Hito</th><th>Objetivo</th><th>Estado</th></tr></thead>
               <tbody>
                 {tareas.map((t) => (
-                  <tr key={t.id} className="clickable" onClick={() => navigate(`/postventa/${t.id}`)}>
-                    <td className="strong">{vtDe(t.venta_id)}</td>
+                  <tr key={t.id} className="clickable"
+                    onClick={() => navigate(t.venta_id ? `/postventa/${t.venta_id}` : `/postventa/cliente/${id}`)}>
+                    <td className="strong">{t.venta_id ? nroVenta(ventaPorId(t.venta_id) || { id: t.venta_id }) : <span className="muted">Sin venta</span>}</td>
                     <td>{t.hito}</td>
                     <td>{fmtFecha(t.objetivo)}</td>
                     <td>{t.estado}</td>

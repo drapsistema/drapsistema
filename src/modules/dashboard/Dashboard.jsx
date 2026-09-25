@@ -211,7 +211,10 @@ function VendedorDash({ d, uid, cfg, tercerizado }) {
 }
 
 function TecnicoDash({ d, uid }) {
-  const mis = d.trabajos.filter((t) => t.tecnico_id === uid);
+  // "Míos" = asignado como técnico del trabajo, o con alguna tarea a su nombre
+  // (trabajos anteriores al campo tecnico_id se asignaban solo por tarea).
+  const conTareaMia = new Set(d.tareas.filter((ta) => ta.tecnico_id === uid).map((ta) => ta.trabajo_id));
+  const mis = d.trabajos.filter((t) => t.tecnico_id === uid || conTareaMia.has(t.id));
   const activos = mis.filter((t) => t.estado !== 'Entregada' && t.estado !== 'Finalizada');
   const diag = mis.filter((t) => t.estado === 'En diagnóstico');
   const rep = mis.filter((t) => t.estado === 'En reparación');
@@ -242,11 +245,14 @@ function TecnicoDash({ d, uid }) {
   );
 }
 
-function PostventaDash({ d }) {
+// Las tareas pendientes son una cola compartida del equipo de postventa;
+// con `uid`, lo realizado se cuenta solo para ese usuario.
+function PostventaDash({ d, uid }) {
   const pend = d.tpost.filter((t) => t.estado === 'Pendiente');
   const venc = pend.filter((t) => diasDesde(t.objetivo) > 0);
   const prox = pend.filter((t) => { const dd = diasDesde(t.objetivo); return dd <= 0 && dd >= -7; });
-  const realMes = d.tpost.filter((t) => t.estado === 'Realizada' && mesActual(t.fecha_real));
+  const realMes = d.tpost.filter((t) => t.estado === 'Realizada' && mesActual(t.fecha_real)
+    && (!uid || t.responsable_id === uid));
   const visitas = d.tpost.filter((t) => t.visita_estado === 'Solicitada' || t.visita_estado === 'Agendada');
   const porHito = ['1 semana', '1 mes', '2 meses'].map((h) => ({ label: h, value: pend.filter((t) => t.hito === h).length }));
 
@@ -256,7 +262,7 @@ function PostventaDash({ d }) {
         <Kpi label="Tareas pendientes" value={pend.length} foot="por hacer" to="/postventa" />
         <Kpi label="Vencidas" value={venc.length} foot="pasaron el objetivo" cl="r" to="/postventa" />
         <Kpi label="Próximas a vencer" value={prox.length} foot="dentro de 7 días" cl="a" to="/postventa" />
-        <Kpi label="Realizadas este mes" value={realMes.length} foot="contactos hechos" cl="g" to="/postventa" />
+        <Kpi label="Realizadas este mes" value={realMes.length} foot={uid ? 'contactos hechos por el usuario' : 'contactos hechos'} cl="g" to="/postventa" />
       </div>
       <div className="two" style={{ marginTop: 18 }}>
         <ChartCard titulo="Pendientes por hito"><BarsH data={porHito} /></ChartCard>
@@ -276,45 +282,76 @@ export default function Dashboard() {
   const [usuarios, setUsuarios] = useState([]);
   const [cfg, setCfg] = useState(null);
   const [tab, setTab] = useState(null);
+  const [verUsuarioId, setVerUsuarioId] = useState(''); // admin: ver el panel de otro usuario
   const { roles, esAdmin, usuarioActualId } = useAuth();
 
   useEffect(() => {
+    // Cada tabla por separado: si una falla (permisos, tabla nueva sin crear),
+    // el resto del panel igual carga.
+    const seguro = (tabla, filtros) => listar(tabla, filtros).catch((e) => {
+      console.error(`Dashboard: no se pudo leer ${tabla}`, e); return [];
+    });
     Promise.all([
-      listar('oportunidades'), listar('clientes'), listar('ventas'),
-      listar('tareas_postventa'), listar('trabajos'), listar('usuarios'),
-      listar('solicitudes_unificacion', { estado: 'Pendiente' }).catch(() => []),
-    ]).then(([op, clientes, ventas, tpost, trabajos, us, unif]) => {
-      setD({ op, clientes: clientes.filter((c) => c.activo !== false), ventas, tpost, trabajos, unif }); setUsuarios(us);
+      seguro('oportunidades'), seguro('clientes'), seguro('ventas'),
+      seguro('tareas_postventa'), seguro('trabajos'), seguro('usuarios'),
+      seguro('solicitudes_unificacion', { estado: 'Pendiente' }), seguro('tareas'),
+    ]).then(([op, clientes, ventas, tpost, trabajos, us, unif, tareas]) => {
+      setD({ op, clientes: clientes.filter((c) => c.activo !== false), ventas, tpost, trabajos, unif, tareas }); setUsuarios(us);
     });
     obtener('configuracion', 1).then(setCfg).catch(() => {});
   }, []);
 
-  const rr = roles || [];
+  const verUsuario = esAdmin && verUsuarioId ? usuarios.find((u) => u.id === Number(verUsuarioId)) : null;
+  const uid = verUsuario ? verUsuario.id : usuarioActualId;
+  const rr = verUsuario ? rolesDe(verUsuario) : (roles || []);
   const dashboards = [];
-  if (esAdmin) dashboards.push({ id: 'admin', label: 'Administración' });
+  if (esAdmin && !verUsuario) dashboards.push({ id: 'admin', label: 'Administración' });
   if (rr.includes('Vendedor')) dashboards.push({ id: 'vendedor', label: 'Vendedor' });
   if (rr.includes('Vendedor tercerizado')) dashboards.push({ id: 'terc', label: 'Vendedor tercerizado' });
   if (rr.includes('Técnico')) dashboards.push({ id: 'tecnico', label: 'Técnico' });
   if (rr.includes('Postventa')) dashboards.push({ id: 'postventa', label: 'Postventa' });
 
-  const activo = tab || dashboards[0]?.id;
+  const activo = dashboards.some((x) => x.id === tab) ? tab : dashboards[0]?.id;
 
   if (!d) return <div><PageHeader titulo="Dashboard" /><div className="vacio">Cargando…</div></div>;
 
   function panel() {
     switch (activo) {
       case 'admin': return <AdminDash d={d} usuarios={usuarios} />;
-      case 'vendedor': return <VendedorDash d={d} uid={usuarioActualId} cfg={cfg} />;
-      case 'terc': return <VendedorDash d={d} uid={usuarioActualId} cfg={cfg} tercerizado />;
-      case 'tecnico': return <TecnicoDash d={d} uid={usuarioActualId} />;
-      case 'postventa': return <PostventaDash d={d} />;
-      default: return <div className="vacio">Este usuario todavía no tiene un panel asignado.</div>;
+      case 'vendedor': return <VendedorDash d={d} uid={uid} cfg={cfg} />;
+      case 'terc': return <VendedorDash d={d} uid={uid} cfg={cfg} tercerizado />;
+      case 'tecnico': return <TecnicoDash d={d} uid={uid} />;
+      case 'postventa': return <PostventaDash d={d} uid={verUsuario ? uid : null} />;
+      default: return <div className="vacio">Este usuario no tiene un panel de Vendedor, Técnico ni Postventa.</div>;
     }
   }
 
+  // Usuarios con algún panel propio (los que tienen sentido ver aislados).
+  const usuariosConPanel = usuarios
+    .filter((u) => rolesDe(u).some((r) => ['Vendedor', 'Vendedor tercerizado', 'Técnico', 'Postventa'].includes(r)))
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
   return (
     <div>
-      <PageHeader titulo="Dashboard" sub="Indicadores y alertas de tu operación. Tocá un indicador para ir al detalle." />
+      <PageHeader titulo="Dashboard" sub="Indicadores y alertas de tu operación. Tocá un indicador para ir al detalle.">
+        {esAdmin && (
+          <div className="field" style={{ margin: 0, minWidth: 220 }}>
+            <label>Ver situación de</label>
+            <select value={verUsuarioId} onChange={(e) => { setVerUsuarioId(e.target.value); setTab(null); }}>
+              <option value="">Todos (vista de administración)</option>
+              {usuariosConPanel.map((u) => (
+                <option key={u.id} value={u.id}>{u.nombre}{u.acceso && u.acceso !== 'Activo' ? ' (inactivo)' : ''}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </PageHeader>
+      {verUsuario && (
+        <div className="aviso" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="grow">Estás viendo el panel de <b>{verUsuario.nombre}</b> ({rr.join(', ')}), tal como lo ve esa persona.</span>
+          <button className="btn ghost sm" onClick={() => { setVerUsuarioId(''); setTab(null); }}>Volver a la vista general</button>
+        </div>
+      )}
       {dashboards.length > 1 && (
         <div className="tabs-row" style={{ marginBottom: 18 }}>
           {dashboards.map((x) => (

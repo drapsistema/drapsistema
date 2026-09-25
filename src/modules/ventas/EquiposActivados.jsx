@@ -1,26 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listar, actualizar } from '../../lib/db';
-import { PageHeader, Empty, nombreCliente, fmtFecha } from '../../shared/ui.jsx';
+import { PageHeader, Empty, nombreCliente, nroVenta } from '../../shared/ui.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
-
-// Mismos campos del equipo que en el detalle de la venta. Solo "Equipo" obligatorio.
-const CAMPOS_EQUIPO = [
-  { name: 'equipo', label: 'Equipo', type: 'text', required: true, full: true, placeholder: 'Ej: DJI Agras T50' },
-  { name: 'ns_dron', label: 'N° de serie de dron', type: 'text' },
-  { name: 'fecha_activacion', label: 'Fecha de activación', type: 'date' },
-  { name: 'ns_caja_dron', label: 'NS caja de dron', type: 'text' },
-  { name: 'ns_caja_tanque', label: 'NS caja tanque de líquidos', type: 'text' },
-  { name: 'ns_baterias', label: 'N° serie baterías', type: 'text' },
-  { name: 'ns_hub', label: 'N° serie HUB', type: 'text' },
-  { name: 'ns_wb37', label: 'N° serie WB37', type: 'text' },
-  { name: 'ns_100w', label: 'N° serie 100W', type: 'text' },
-  { name: 'ns_core_board', label: 'N° serie core board control', type: 'text' },
-  { name: 'ns_generador', label: 'N° serie generador', type: 'text' },
-  { name: 'localidad', label: 'Localidad', type: 'text' },
-  { name: 'mail', label: 'Mail', type: 'text' },
-];
+import { CAMPOS_EQUIPO } from './equipo.js';
 
 const COLS = [
   { key: 'equipo', label: 'Equipo' },
@@ -51,7 +35,7 @@ export default function EquiposActivados() {
   const ventaDe = (vid) => ventas.find((v) => v.id === vid);
   const nombreCli = (clid) => { const c = clientes.find((x) => x.id === clid); return c ? nombreCliente(c) : '—'; };
   const clienteDe = (p) => { const v = ventaDe(p.venta_id); return v ? nombreCli(v.cliente_id) : '—'; };
-  const vt = (vid) => `VT-${String(vid).padStart(4, '0')}`;
+  const vt = (vid) => nroVenta(ventaDe(vid) || { id: vid });
   const nombreEquipo = (p) => p.equipo || p.modelo || 'Equipo sin nombre';
 
   const valorCol = (p, key) => {

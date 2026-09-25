@@ -1,30 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, crear, actualizar, generarPostventa } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, AvisoClienteIncompleto } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, AvisoClienteIncompleto, nroVenta } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
-import { rolesDe } from '../../shared/permisos';
+import { rolesDe, parseArray } from '../../shared/permisos';
 import Icon from '../../shared/Icon.jsx';
 
-// Campos de cada equipo cargado en la venta. Solo "Equipo" es obligatorio.
-const CAMPOS_EQUIPO = [
-  { name: 'equipo', label: 'Equipo', type: 'text', required: true, full: true, placeholder: 'Ej: DJI Agras T50' },
-  { name: 'ns_dron', label: 'N° de serie de dron', type: 'text' },
-  { name: 'fecha_activacion', label: 'Fecha de activación', type: 'date' },
-  { name: 'ns_caja_dron', label: 'NS caja de dron', type: 'text' },
-  { name: 'ns_caja_tanque', label: 'NS caja tanque de líquidos', type: 'text' },
-  { name: 'ns_baterias', label: 'N° serie baterías', type: 'text' },
-  { name: 'ns_hub', label: 'N° serie HUB', type: 'text' },
-  { name: 'ns_wb37', label: 'N° serie WB37', type: 'text' },
-  { name: 'ns_100w', label: 'N° serie 100W', type: 'text' },
-  { name: 'ns_core_board', label: 'N° serie core board control', type: 'text' },
-  { name: 'ns_generador', label: 'N° serie generador', type: 'text' },
-  { name: 'localidad', label: 'Localidad', type: 'text' },
-  { name: 'mail', label: 'Mail', type: 'text' },
-];
+import { CAMPOS_EQUIPO } from './equipo.js';
+import { estadoCobro } from './cobro.js';
+
+const ESTADOS_COBRO = ['No', 'Parcial', 'Total'];
+const FORMAS_PAGO = ['Contado', 'Cheques', 'Transferencia', 'Tarjeta', 'Otros'];
 
 export default function VentaDetalle() {
   const { id } = useParams();
@@ -40,6 +29,10 @@ export default function VentaDetalle() {
   const [equipoModal, setEquipoModal] = useState(null);
   const [comisionInput, setComisionInput] = useState('');
   const [guardandoEntrega, setGuardandoEntrega] = useState(false);
+  const [cobro, setCobro] = useState(null);
+  const [erroresCobro, setErroresCobro] = useState({});
+  const [guardandoCobro, setGuardandoCobro] = useState(false);
+  const [numeroInput, setNumeroInput] = useState(null); // null = no se está editando
   const { esAdmin, usuarioActualId, roles } = useAuth();
 
   useEffect(() => { cargar(); }, [id]);
@@ -52,6 +45,8 @@ export default function VentaDetalle() {
       setProductos(await listar('productos', { venta_id: Number(id) }));
       setForm({ direccion_entrega: v.direccion_entrega || '', fecha_entrega: v.fecha_entrega || '' });
       setComisionInput(v.comision ? String(v.comision) : '');
+      setCobro(cobroDe(v));
+      setErroresCobro({});
       listar('usuarios').then(setUsuarios).catch(() => setUsuarios([]));
     }
   }
@@ -64,7 +59,7 @@ export default function VentaDetalle() {
   // La venta se bloquea cuando está cobrada Y registrada: a partir de ahí
   // solo un admin edita sus datos (integridad de lo ya cerrado). Antes de
   // eso, el vendedor (o tercerizado) puede operarla normalmente.
-  const bloqueada = Boolean(venta.cobrado && venta.registrado);
+  const bloqueada = estadoCobro(venta) === 'Total' && Boolean(venta.registrado);
   const puedeEditar = esAdmin || !bloqueada;
 
   // Vendedor de la venta y si es tercerizado (para la comisión).
@@ -120,12 +115,59 @@ export default function VentaDetalle() {
     }
   }
 
-  async function toggleCobro(campo) {
-    const nuevo = !venta[campo];
-    await actualizar('ventas', id, { [campo]: nuevo });
-    await comentarSistema('venta', id, `${campo === 'cobrado' ? 'Cobrado' : 'Registrado'} marcado como ${nuevo ? 'Sí' : 'No'}.`, usuarioActualId);
-    cargar();
+  async function guardarCobro() {
+    const e = {};
+    if (!cobro.estado_cobro) e.estado_cobro = true;
+    if (cobro.formas_pago.length === 0) e.formas_pago = true;
+    if (cobro.formas_pago.includes('Otros') && !cobro.forma_pago_otro.trim()) e.forma_pago_otro = true;
+    setErroresCobro(e);
+    if (Object.keys(e).length) { toast('Completá los datos obligatorios del cobro', 'err'); return; }
+
+    setGuardandoCobro(true);
+    try {
+      const otro = cobro.formas_pago.includes('Otros') ? cobro.forma_pago_otro.trim() : '';
+      await actualizar('ventas', id, {
+        estado_cobro: cobro.estado_cobro,
+        cobrado: cobro.estado_cobro === 'Total',
+        con_iva: cobro.con_iva,
+        formas_pago: cobro.formas_pago,
+        forma_pago_otro: otro,
+        registrado: cobro.registrado,
+      });
+      const formas = cobro.formas_pago.map((f) => (f === 'Otros' ? `Otros (${otro})` : f)).join(', ');
+      const iva = cobro.con_iva === true ? ' · con IVA' : cobro.con_iva === false ? ' · sin IVA' : '';
+      await comentarSistema('venta', id,
+        `Cobro actualizado: ${cobro.estado_cobro === 'No' ? 'no cobrado' : `cobro ${cobro.estado_cobro.toLowerCase()}`}${iva} · forma de pago: ${formas} · registrado: ${cobro.registrado ? 'Sí' : 'No'}.`,
+        usuarioActualId);
+      toast('Cobro guardado');
+      await cargar();
+    } catch (err) {
+      console.error(err);
+      toast('No se pudo guardar el cobro', 'err');
+    } finally {
+      setGuardandoCobro(false);
+    }
   }
+
+  async function guardarNumero() {
+    const nuevo = numeroInput.trim();
+    try {
+      await actualizar('ventas', id, { numero: nuevo || null });
+      await comentarSistema('venta', id,
+        `Número de venta cambiado de ${nroVenta(venta)} a ${nroVenta({ ...venta, numero: nuevo || null })}.`, usuarioActualId);
+      setNumeroInput(null);
+      toast('Número de venta actualizado');
+      await cargar();
+    } catch (err) {
+      console.error(err);
+      toast(err?.code === '23505' ? 'Ya existe otra venta con ese número' : 'No se pudo cambiar el número', 'err');
+    }
+  }
+
+  const setC = (k, v) => setCobro((c) => ({ ...c, [k]: v }));
+  const toggleForma = (f) => setCobro((c) => ({
+    ...c, formas_pago: c.formas_pago.includes(f) ? c.formas_pago.filter((x) => x !== f) : [...c.formas_pago, f],
+  }));
 
   async function guardarComision() {
     const t = comisionInput.trim();
@@ -161,7 +203,7 @@ export default function VentaDetalle() {
 
   return (
     <div>
-      <PageHeader titulo={`Venta VT-${String(venta.id).padStart(4, '0')} · ${nombreCliente(cliente)}`}
+      <PageHeader titulo={`Venta ${nroVenta(venta)} · ${nombreCliente(cliente)}`}
         sub={`Ganada el ${fmtFecha(venta.fecha_ganada)} · ${productos.length} equipos`}>
         <BackButton to="/ventas" />
       </PageHeader>
@@ -244,6 +286,26 @@ export default function VentaDetalle() {
           <div className="card">
             <div className="card-h">Datos</div>
             <div className="card-pad">
+              {numeroInput === null ? (
+                <InfoRow k="N° de venta" v={
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <b>{nroVenta(venta)}</b>
+                    {puedeEditar && !cancelada && (
+                      <button className="btn ghost sm" onClick={() => setNumeroInput(venta.numero || nroVenta(venta))}>Editar</button>
+                    )}
+                  </span>} />
+              ) : (
+                <div className="field">
+                  <label>N° de venta</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={numeroInput} onChange={(e) => setNumeroInput(e.target.value)} autoFocus
+                      placeholder={`VT-${String(venta.id).padStart(4, '0')}`} />
+                    <button className="btn sm" onClick={guardarNumero}><Icon name="check" size={14} /></button>
+                    <button className="btn ghost sm" onClick={() => setNumeroInput(null)}>✕</button>
+                  </div>
+                  <div className="hint">Dejalo vacío para volver al número automático.</div>
+                </div>
+              )}
               <InfoRow k="Oportunidad" v={venta.oportunidad_id
                 ? <a onClick={() => navigate(`/comercial/${venta.oportunidad_id}`)}>#{venta.oportunidad_id} →</a>
                 : <span className="muted">venta directa</span>} />
@@ -283,18 +345,65 @@ export default function VentaDetalle() {
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-h">Cobro</div>
               <div className="card-pad">
-                {puedeEditar ? (
+                {puedeEditar && cobro ? (
                   <>
-                    <label style={{ display: 'flex', gap: 8, marginBottom: 10, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={venta.cobrado} onChange={() => toggleCobro('cobrado')} /> Cobrado
+                    <div className="field">
+                      <label>Cobrado <span className="req">*</span></label>
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', ...(erroresCobro.estado_cobro ? rojo : {}) }}>
+                        {ESTADOS_COBRO.map((e) => (
+                          <label key={e} style={opcion}>
+                            <input type="checkbox" checked={cobro.estado_cobro === e}
+                              onChange={() => setC('estado_cobro', cobro.estado_cobro === e ? '' : e)} /> {e}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="field">
+                      <label>IVA</label>
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                        {[['Con IVA', true], ['Sin IVA', false]].map(([txt, val]) => (
+                          <label key={txt} style={opcion}>
+                            <input type="checkbox" checked={cobro.con_iva === val}
+                              onChange={() => setC('con_iva', cobro.con_iva === val ? null : val)} /> {txt}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="field">
+                      <label>Forma de pago <span className="req">*</span></label>
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', ...(erroresCobro.formas_pago ? rojo : {}) }}>
+                        {FORMAS_PAGO.map((f) => (
+                          <label key={f} style={opcion}>
+                            <input type="checkbox" checked={cobro.formas_pago.includes(f)} onChange={() => toggleForma(f)} /> {f}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="hint">Podés marcar más de una.</div>
+                    </div>
+                    {cobro.formas_pago.includes('Otros') && (
+                      <div className="field">
+                        <label>¿Qué otra forma de pago? <span className="req">*</span></label>
+                        <input value={cobro.forma_pago_otro} onChange={(e) => setC('forma_pago_otro', e.target.value)}
+                          placeholder="Ej: canje, pagaré…"
+                          style={erroresCobro.forma_pago_otro ? { borderColor: 'var(--red)' } : undefined} />
+                      </div>
+                    )}
+
+                    <label style={{ ...opcion, marginBottom: 12 }}>
+                      <input type="checkbox" checked={cobro.registrado} onChange={(e) => setC('registrado', e.target.checked)} /> Registrado
                     </label>
-                    <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={venta.registrado} onChange={() => toggleCobro('registrado')} /> Registrado
-                    </label>
+
+                    <button className="btn full" onClick={guardarCobro} disabled={guardandoCobro}>
+                      <Icon name="check" size={16} /> {guardandoCobro ? 'Guardando…' : 'Guardar cobro'}
+                    </button>
                   </>
                 ) : (
                   <>
-                    <InfoRow k="Cobrado" v={venta.cobrado ? 'Sí' : 'No'} />
+                    <InfoRow k="Cobrado" v={estadoCobro(venta)} />
+                    <InfoRow k="IVA" v={venta.con_iva === true ? 'Con IVA' : venta.con_iva === false ? 'Sin IVA' : '—'} />
+                    <InfoRow k="Forma de pago" v={textoFormasPago(venta) || '—'} />
                     <InfoRow k="Registrado" v={venta.registrado ? 'Sí' : 'No'} />
                   </>
                 )}
@@ -342,6 +451,25 @@ export default function VentaDetalle() {
       )}
     </div>
   );
+}
+
+const opcion = { display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontWeight: 400 };
+const rojo = { outline: '1px solid var(--red)', borderRadius: 6, padding: 4 };
+
+function textoFormasPago(v) {
+  return parseArray(v.formas_pago)
+    .map((f) => (f === 'Otros' && v.forma_pago_otro ? `Otros (${v.forma_pago_otro})` : f)).join(', ');
+}
+
+function cobroDe(v) {
+  return {
+    // Una venta sin datos de cobro arranca sin selección, para obligar a elegir.
+    estado_cobro: v.estado_cobro || (v.cobrado ? 'Total' : ''),
+    con_iva: v.con_iva ?? null,
+    formas_pago: parseArray(v.formas_pago),
+    forma_pago_otro: v.forma_pago_otro || '',
+    registrado: Boolean(v.registrado),
+  };
 }
 
 function InfoRow({ k, v }) {

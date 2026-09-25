@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listar } from '../../lib/db';
-import { PageHeader, Empty, nombreCliente, fmtFecha } from '../../shared/ui.jsx';
+import { PageHeader, Empty, nombreCliente, fmtFecha, nroVenta } from '../../shared/ui.jsx';
+import { estadoCobro } from './cobro.js';
+
+const ORDEN_COBRO = { No: 0, Parcial: 1, Total: 2 };
+const BADGE_COBRO = { No: 'a', Parcial: 'b', Total: 'g' };
 
 // Columnas ordenables de la tabla.
 const COLS = [
@@ -11,6 +15,7 @@ const COLS = [
   { key: 'ganada', label: 'Ganada' },
   { key: 'entrega', label: 'Entrega' },
   { key: 'cobrado', label: 'Cobrado' },
+  { key: 'registrado', label: 'Registrado' },
   { key: 'estado', label: 'Estado' },
 ];
 
@@ -33,18 +38,18 @@ export default function Ventas() {
 
   const nombreCli = (id) => { const c = clientes.find((x) => x.id === id); return c ? nombreCliente(c) : `Cliente #${id}`; };
   const nombreVen = (id) => usuarios.find((u) => u.id === id)?.nombre || '— sin asignar —';
-  const vt = (id) => `VT-${String(id).padStart(4, '0')}`;
   const badgeEstado = (e) => e === 'Cancelada' ? 'r' : e === 'Entregada' ? 'b' : '';
 
   // Valor por el que se ordena/busca cada columna.
   const valorCol = (v, key) => {
     switch (key) {
-      case 'vt': return v.id;
+      case 'vt': return nroVenta(v).toLowerCase();
       case 'vendedor': return nombreVen(v.vendedor_id).toLowerCase();
       case 'cliente': return nombreCli(v.cliente_id).toLowerCase();
       case 'ganada': return v.fecha_ganada || '';
       case 'entrega': return v.fecha_entrega || '';
-      case 'cobrado': return v.cobrado ? 1 : 0;
+      case 'cobrado': return ORDEN_COBRO[estadoCobro(v)];
+      case 'registrado': return v.registrado ? 1 : 0;
       case 'estado': return v.estado || '';
       default: return '';
     }
@@ -55,7 +60,7 @@ export default function Ventas() {
     const term = q.trim().toLowerCase();
     if (term) {
       arr = arr.filter((v) =>
-        vt(v.id).toLowerCase().includes(term)
+        nroVenta(v).toLowerCase().includes(term)
         || nombreVen(v.vendedor_id).toLowerCase().includes(term)
         || nombreCli(v.cliente_id).toLowerCase().includes(term)
         || (v.estado || '').toLowerCase().includes(term)
@@ -120,12 +125,13 @@ export default function Ventas() {
             <tbody>
               {filtradas.map((v) => (
                 <tr key={v.id} className="clickable" onClick={() => navigate(`/ventas/${v.id}`)}>
-                  <td className="strong">{vt(v.id)}</td>
+                  <td className="strong">{nroVenta(v)}</td>
                   <td>{nombreVen(v.vendedor_id)}</td>
                   <td>{nombreCli(v.cliente_id)}</td>
                   <td>{fmtFecha(v.fecha_ganada)}</td>
                   <td>{v.fecha_entrega ? fmtFecha(v.fecha_entrega) : <span className="muted">pendiente</span>}</td>
-                  <td>{v.cobrado ? <span className="badge g">Sí</span> : <span className="badge a">No</span>}</td>
+                  <td><span className={'badge ' + BADGE_COBRO[estadoCobro(v)]}>{estadoCobro(v) === 'No' ? 'No' : `Cobro ${estadoCobro(v).toLowerCase()}`}</span></td>
+                  <td>{v.registrado ? <span className="badge g">Sí</span> : <span className="badge">No</span>}</td>
                   <td><span className={'badge ' + badgeEstado(v.estado)}>{v.estado}</span></td>
                 </tr>
               ))}

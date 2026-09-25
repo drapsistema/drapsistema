@@ -145,7 +145,7 @@ export async function unificarClientes(origenId, destinoId) {
     const o = demoStore.clientes.find((c) => c.id === Number(origenId));
     const d = demoStore.clientes.find((c) => c.id === Number(destinoId));
     const movidos = {};
-    ['contactos', 'oportunidades', 'ventas', 'trabajos'].forEach((t) => {
+    ['contactos', 'oportunidades', 'ventas', 'trabajos', 'tareas_postventa'].forEach((t) => {
       const filas = (demoStore[t] || []).filter((f) => f.cliente_id === o.id);
       filas.forEach((f) => { f.cliente_id = d.id; });
       movidos[t] = filas.length;

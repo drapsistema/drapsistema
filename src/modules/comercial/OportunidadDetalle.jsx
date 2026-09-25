@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, actualizar } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, diasDesde, AvisoClienteIncompleto } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, diasDesde, AvisoClienteIncompleto, nroVenta } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
@@ -24,6 +24,7 @@ export default function OportunidadDetalle() {
   const [accion, setAccion] = useState(null); // 'coti' | 'seg' | 'cierre' | null
   const [reasignando, setReasignando] = useState(false);
   const [nuevoVendedorId, setNuevoVendedorId] = useState('');
+  const [motivoReasignacion, setMotivoReasignacion] = useState('');
   const { perfil } = useAuth();
 
   useEffect(() => { cargar(); }, [id]);
@@ -131,12 +132,16 @@ export default function OportunidadDetalle() {
   const vendedorActual = usuarios.find((u) => u.id === op.vendedor_id)?.nombre || '— sin asignar —';
 
   async function reasignar() {
+    const nuevoId = nuevoVendedorId ? Number(nuevoVendedorId) : null;
+    if (nuevoId === (op.vendedor_id ?? null)) { toast('Elegí un vendedor distinto al actual', 'err'); return; }
+    if (!motivoReasignacion.trim()) { toast('El motivo del cambio es obligatorio', 'err'); return; }
     try {
-      const nuevoId = nuevoVendedorId ? Number(nuevoVendedorId) : null;
       await actualizar('oportunidades', op.id, { vendedor_id: nuevoId });
       const nom = usuarios.find((u) => u.id === nuevoId)?.nombre || 'sin asignar';
-      await comentarSistema('op', op.id, `Oportunidad reasignada a ${nom}.`);
+      await comentarSistema('op', op.id,
+        `Oportunidad reasignada de ${vendedorActual} a ${nom}. Motivo: ${motivoReasignacion.trim()}`, perfil?.id ?? null);
       setReasignando(false);
+      setMotivoReasignacion('');
       toast('Oportunidad reasignada');
       await cargar();
     } catch (e) {
@@ -251,7 +256,7 @@ export default function OportunidadDetalle() {
               {intentoActual > 1 && <InfoRow k="Intento actual" v={`#${intentoActual}`} />}
               <InfoRow k="Primer contacto" v={fmtFecha(op.fecha_contacto)} />
               <InfoRow k="Relevamiento" v={op.relevamiento} />
-              {venta && <InfoRow k="Venta" v={<a onClick={() => navigate(`/ventas/${venta.id}`)}>VT-{String(venta.id).padStart(4, '0')} →</a>} />}
+              {venta && <InfoRow k="Venta" v={<a onClick={() => navigate(`/ventas/${venta.id}`)}>{nroVenta(venta)} →</a>} />}
             </div>
           </div>
         </div>
@@ -286,9 +291,15 @@ export default function OportunidadDetalle() {
                   {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
                 </select>
               </div>
+              <div className="field">
+                <label>Motivo de cambio <span className="req">*</span></label>
+                <textarea rows={2} value={motivoReasignacion} onChange={(e) => setMotivoReasignacion(e.target.value)}
+                  placeholder="Ej: el vendedor anterior dejó la zona" />
+                <div className="hint">Queda registrado en los comentarios de la oportunidad.</div>
+              </div>
               <div className="modal-foot">
                 <button className="btn ghost" onClick={() => setReasignando(false)}>Cancelar</button>
-                <button className="btn" onClick={reasignar}>Reasignar</button>
+                <button className="btn" onClick={reasignar} disabled={!motivoReasignacion.trim()}>Reasignar</button>
               </div>
             </div>
           </div>

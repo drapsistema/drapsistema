@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { obtener, listar, actualizar, crear, generarPostventa } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, diasDesde } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, diasDesde, nroVenta } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
@@ -18,8 +18,14 @@ function semaforoTarea(objetivo) {
   return { cl: 'g', txt: `Faltan ${-d} días` };
 }
 
+// Dos modos: /postventa/:id (postventa de una venta) y
+// /postventa/cliente/:clienteId (equipos comprados en otro lado, sin venta).
 export default function PostventaDetalle() {
-  const { id } = useParams(); // id de la venta
+  const { id: ventaId, clienteId } = useParams();
+  const porCliente = Boolean(clienteId);
+  // Hilo de comentarios propio de cada modo (no mezclar ids de venta y de cliente).
+  const entidadLog = porCliente ? 'post-cli' : 'post';
+  const refLog = porCliente ? clienteId : ventaId;
   const toast = useToast();
   const { usuarioActualId } = useAuth();
   const [venta, setVenta] = useState(null);
@@ -27,29 +33,38 @@ export default function PostventaDetalle() {
   const [tareas, setTareas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [nuevaTarea, setNuevaTarea] = useState(false);
+  const [cargado, setCargado] = useState(false);
 
-  useEffect(() => { cargar(); }, [id]);
+  useEffect(() => { cargar(); }, [ventaId, clienteId]);
 
   async function cargar() {
-    const v = await obtener('ventas', id);
-    setVenta(v);
-    if (v) {
-      setCliente(await obtener('clientes', v.cliente_id));
-      setTareas((await listar('tareas_postventa', { venta_id: Number(id) })).sort((a, b) => a.id - b.id));
-      listar('usuarios').then(setUsuarios).catch(() => setUsuarios([]));
+    listar('usuarios').then(setUsuarios).catch(() => setUsuarios([]));
+    if (porCliente) {
+      setCliente(await obtener('clientes', clienteId));
+      const ts = await listar('tareas_postventa', { cliente_id: Number(clienteId) });
+      setTareas(ts.filter((t) => !t.venta_id).sort((a, b) => a.id - b.id));
+    } else {
+      const v = await obtener('ventas', ventaId);
+      setVenta(v);
+      if (v) {
+        setCliente(await obtener('clientes', v.cliente_id));
+        setTareas((await listar('tareas_postventa', { venta_id: Number(ventaId) })).sort((a, b) => a.id - b.id));
+      }
     }
+    setCargado(true);
   }
 
-  if (!venta) return <Empty>Cargando…</Empty>;
+  if (!cargado || (!porCliente && !venta)) return <Empty>Cargando…</Empty>;
 
-  const entregada = Boolean(venta.fecha_entrega);
-  const faltaGenerar = entregada && tareas.length === 0;
+  const entregada = porCliente || Boolean(venta.fecha_entrega);
+  const faltaGenerar = !porCliente && entregada && tareas.length === 0;
+  const equipos = [...new Set(tareas.map((t) => t.equipo).filter(Boolean))];
 
   async function generar() {
     try {
-      const n = await generarPostventa(id);
+      const n = await generarPostventa(ventaId);
       if (n > 0) {
-        await comentarSistema('post', id, `Se generó la postventa (${n} tareas de contacto).`, usuarioActualId);
+        await comentarSistema(entidadLog, refLog, `Se generó la postventa (${n} tareas de contacto).`, usuarioActualId);
         toast('Postventa generada');
       } else {
         toast('No había nada para generar', 'err');
@@ -64,11 +79,14 @@ export default function PostventaDetalle() {
   async function agregarTarea(valores) {
     try {
       await crear('tareas_postventa', {
-        venta_id: Number(id), hito: valores.hito, objetivo: valores.objetivo,
+        ...(porCliente
+          ? { venta_id: null, cliente_id: Number(clienteId), equipo: equipos[0] || null }
+          : { venta_id: Number(ventaId) }),
+        hito: valores.hito, objetivo: valores.objetivo,
         estado: 'Pendiente', fecha_real: null, observaciones: '', hectareas: null,
         visita: false, visita_estado: '', visita_agenda: null, visita_real: null, responsable_id: null,
       });
-      await comentarSistema('post', id, `Se agregó una tarea de contacto extra: "${valores.hito}".`, usuarioActualId);
+      await comentarSistema(entidadLog, refLog, `Se agregó una tarea de contacto extra: "${valores.hito}".`, usuarioActualId);
       setNuevaTarea(false);
       toast('Tarea de contacto agregada');
       cargar();
@@ -80,31 +98,33 @@ export default function PostventaDetalle() {
 
   async function marcarRealizada(t, datos) {
     await actualizar('tareas_postventa', t.id, {
-      estado: 'Realizada', fecha_real: hoyISO(), observaciones: datos.obs,
+      estado: 'Realizada', fecha_real: hoyISO(), observaciones: datos.obs, responsable_id: usuarioActualId,
       hectareas: datos.hectareas ? Number(datos.hectareas) : null,
       visita: datos.visita, visita_estado: datos.visita ? 'Solicitada' : '',
     });
-    await comentarSistema('post', id, `Contacto de "${t.hito}" registrado${datos.hectareas ? ` · ${datos.hectareas} ha` : ''}.`, usuarioActualId);
-    if (datos.visita) await comentarSistema('post', id, 'Se solicitó coordinar una visita técnica.', usuarioActualId);
+    await comentarSistema(entidadLog, refLog, `Contacto de "${t.hito}" registrado${datos.hectareas ? ` · ${datos.hectareas} ha` : ''}.`, usuarioActualId);
+    if (datos.visita) await comentarSistema(entidadLog, refLog, 'Se solicitó coordinar una visita técnica.', usuarioActualId);
     toast('Contacto registrado');
     cargar();
   }
 
   async function agendarVisita(t, fecha) {
     await actualizar('tareas_postventa', t.id, { visita_estado: 'Agendada', visita_agenda: fecha });
-    await comentarSistema('post', id, `Visita técnica agendada para ${fmtFecha(fecha)}.`, usuarioActualId);
+    await comentarSistema(entidadLog, refLog, `Visita técnica agendada para ${fmtFecha(fecha)}.`, usuarioActualId);
     toast('Visita agendada'); cargar();
   }
   async function registrarVisita(t, fecha) {
     await actualizar('tareas_postventa', t.id, { visita_estado: 'Realizada', visita_real: fecha });
-    await comentarSistema('post', id, `Visita técnica realizada el ${fmtFecha(fecha)}.`, usuarioActualId);
+    await comentarSistema(entidadLog, refLog, `Visita técnica realizada el ${fmtFecha(fecha)}.`, usuarioActualId);
     toast('Visita registrada'); cargar();
   }
 
   return (
     <div>
       <PageHeader titulo={`Postventa · ${nombreCliente(cliente)}`}
-        sub={`Venta VT-${String(venta.id).padStart(4, '0')} · entregada ${fmtFecha(venta.fecha_entrega)}`}>
+        sub={porCliente
+          ? `Sin venta en el sistema${equipos.length ? ` · ${equipos.join(', ')}` : ''}`
+          : `Venta ${nroVenta(venta)} · entregada ${fmtFecha(venta.fecha_entrega)}`}>
         <BackButton to="/postventa" />
       </PageHeader>
 
@@ -125,15 +145,24 @@ export default function PostventaDetalle() {
                 tareas.map((t) => <Tarea key={t.id} t={t} onMarcar={marcarRealizada} onAgendar={agendarVisita} onRegistrar={registrarVisita} />)}
             </div>
           </div>
-          <Comentarios entidad="post" refId={venta.id} />
+          <Comentarios entidad={entidadLog} refId={refLog} />
         </div>
         <div>
           <div className="card">
             <div className="card-h">Resumen</div>
             <div className="card-pad">
               <InfoRow k="Cliente" v={nombreCliente(cliente)} />
-              <InfoRow k="Vendedor" v={usuarios.find((u) => u.id === venta.vendedor_id)?.nombre || '— sin asignar —'} />
-              <InfoRow k="Entrega" v={fmtFecha(venta.fecha_entrega)} />
+              {porCliente ? (
+                <>
+                  <InfoRow k="Origen" v="Equipo comprado fuera de la empresa" />
+                  <InfoRow k="Equipo" v={equipos.join(', ') || '—'} />
+                </>
+              ) : (
+                <>
+                  <InfoRow k="Vendedor" v={usuarios.find((u) => u.id === venta.vendedor_id)?.nombre || '— sin asignar —'} />
+                  <InfoRow k="Entrega" v={fmtFecha(venta.fecha_entrega)} />
+                </>
+              )}
               <InfoRow k="Realizadas" v={`${tareas.filter((t) => t.estado === 'Realizada').length} de ${tareas.length}`} />
             </div>
           </div>

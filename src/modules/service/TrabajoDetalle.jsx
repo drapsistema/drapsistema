@@ -9,6 +9,7 @@ import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 import { ESTADOS_SERVICE } from './service.js';
+import { GarantiasCard, textoGarantia } from './Garantias.jsx';
 
 export default function TrabajoDetalle() {
   const { id } = useParams();
@@ -18,6 +19,7 @@ export default function TrabajoDetalle() {
   const [cliente, setCliente] = useState(null);
   const [tareas, setTareas] = useState([]);
   const [repuestos, setRepuestos] = useState([]);
+  const [garantias, setGarantias] = useState([]);
   const [tecnicos, setTecnicos] = useState([]);
   const [asignarTec, setAsignarTec] = useState('');
   const [diagInput, setDiagInput] = useState('');
@@ -35,6 +37,8 @@ export default function TrabajoDetalle() {
       setCliente(await obtener('clientes', t.cliente_id));
       setTareas(await listar('tareas', { trabajo_id: Number(id) }));
       setRepuestos(await listar('repuestos', { trabajo_id: Number(id) }));
+      // La tabla puede no existir si todavía no se corrió el SQL de garantías.
+      setGarantias(await listar('garantias_trabajo', { trabajo_id: Number(id) }).catch(() => []));
       setTecnicos(usuariosConRol(await listar('usuarios'), 'Técnico'));
       setDiagInput(t.diagnostico || '');
     }
@@ -122,7 +126,9 @@ export default function TrabajoDetalle() {
       <div class="row"><span class="k">Equipo</span><span>${esc(trabajo.marca)} ${esc(trabajo.modelo)} · serie ${esc(trabajo.nro_serie)}</span></div>
       <div class="row"><span class="k">Técnico</span><span>${esc(nombreTec(trabajo.tecnico_id))}</span></div>
       <div class="row"><span class="k">Ingreso</span><span>${fmtFecha(trabajo.ingreso)}</span></div>
-      <div class="row"><span class="k">En garantía</span><span>${trabajo.garantia ? 'Sí' : 'No'}</span></div>
+      <div class="row"><span class="k">En garantía</span><span>${garantias.length
+        ? garantias.map((g) => esc(g.pieza) + (textoGarantia(g) ? ` (${esc(textoGarantia(g))})` : '')).join(' · ')
+        : (trabajo.garantia ? 'Sí' : 'No')}</span></div>
       <h2>Diagnóstico</h2><div class="diag">${esc(trabajo.diagnostico) || '—'}</div>
       <h2>Tareas realizadas</h2><table><thead><tr><th>Tarea</th><th>Técnico</th><th>Horas</th><th>Estado</th></tr></thead><tbody>${filasT}</tbody></table>
       <h2>Repuestos</h2><table><thead><tr><th>Artículo</th><th>Cant.</th><th>Pieza vieja</th><th>Pieza nueva</th><th>Gar.</th></tr></thead><tbody>${filasR}</tbody></table>
@@ -250,11 +256,14 @@ export default function TrabajoDetalle() {
               <InfoRow k="Ingreso" v={fmtFecha(trabajo.ingreso)} />
               <InfoRow k="Egreso" v={trabajo.egreso ? fmtFecha(trabajo.egreso) : '—'} />
               <InfoRow k="Entrega" v={trabajo.fecha_entrega ? fmtFecha(trabajo.fecha_entrega) : '—'} />
-              <InfoRow k="En garantía" v={trabajo.garantia ? 'Sí' : 'No'} />
+              <InfoRow k="En garantía" v={garantias.length ? `${garantias.length} pieza${garantias.length === 1 ? '' : 's'}` : (trabajo.garantia ? 'Sí' : 'No')} />
               <InfoRow k="Aprobación cliente" v={trabajo.aprobacion_cliente ? 'Sí' : 'No'} />
               <InfoRow k="Observaciones" v={trabajo.observaciones || '—'} />
             </div>
           </div>
+
+          <GarantiasCard trabajoId={id} garantias={garantias} editable={estado !== 'Entregada'}
+            recargar={cargar} toast={toast} usuarioActualId={usuarioActualId} />
 
           {puedeInforme && (
             <div className="card" style={{ marginTop: 16 }}>
