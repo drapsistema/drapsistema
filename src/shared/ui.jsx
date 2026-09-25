@@ -35,6 +35,35 @@ export function nombreCliente(c) {
   return c.tipo === 'Persona física' ? `${c.nombre} ${c.apellido}`.trim() : c.razon_social;
 }
 
+// Datos opcionales del cliente que conviene completar. Sin CUIT no se
+// puede descartar que el cliente esté duplicado en la base.
+export function datosFaltantesCliente(c) {
+  if (!c) return [];
+  const faltan = [];
+  if (!c.cuit) faltan.push('CUIT');
+  if (!c.domicilio) faltan.push('domicilio');
+  if (!c.telefono) faltan.push('teléfono');
+  return faltan;
+}
+
+export function AvisoClienteIncompleto({ cliente }) {
+  const navigate = useNavigate();
+  const faltan = datosFaltantesCliente(cliente);
+  if (faltan.length === 0) return null;
+  return (
+    <div className="aviso warn" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+      <span className="grow">
+        <b>{nombreCliente(cliente)}</b> tiene datos incompletos (falta: {faltan.join(', ')}).
+        {!cliente.cuit && ' Sin CUIT, este cliente podría estar duplicado en la base.'}
+        {' '}Completá los datos para asegurarte de que no sea el caso.
+      </span>
+      <button className="btn ghost sm" onClick={() => navigate(`/clientes/${cliente.id}/editar`)}>
+        Completar datos →
+      </button>
+    </div>
+  );
+}
+
 // Formatea una fecha ISO (YYYY-MM-DD) a formato local corto.
 export function fmtFecha(iso) {
   if (!iso) return '—';

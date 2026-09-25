@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, actualizar } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, diasDesde } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, diasDesde, AvisoClienteIncompleto } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
@@ -182,6 +182,8 @@ export default function OportunidadDetalle() {
           )}
         </div>
       )}
+
+      {op.resultado !== 'Perdida' && <AvisoClienteIncompleto cliente={cliente} />}
 
       {intentoActual > 1 && !cerrada && (
         <div className="aviso">

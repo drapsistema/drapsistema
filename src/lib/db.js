@@ -114,6 +114,28 @@ export async function clientePorCuit(cuit) {
   return (data && data[0]) || null;
 }
 
+// ---- CLIENTES CON NOMBRE PARECIDO ----
+// Para avisar de posibles duplicados cuando se carga un cliente sin CUIT.
+// Vía la función SECURITY DEFINER `clientes_parecidos`: busca en todos
+// los clientes, pero el nombre solo vuelve si quien pregunta puede ver la
+// ficha. Devuelve [{ cliente_id, puede_ver, nombre }].
+export async function clientesParecidos(texto, excluirId = null) {
+  if (modoDemo) {
+    const t = texto.toLowerCase();
+    return (demoStore.clientes || [])
+      .filter((c) => c.id !== Number(excluirId))
+      .map((c) => ({
+        cliente_id: c.id, puede_ver: true,
+        nombre: c.tipo === 'Persona física' ? `${c.nombre || ''} ${c.apellido || ''}`.trim() : c.razon_social,
+      }))
+      .filter((c) => (c.nombre || '').toLowerCase().includes(t))
+      .slice(0, 5);
+  }
+  const { data, error } = await supabase.rpc('clientes_parecidos', { p_texto: texto, p_excluir: excluirId });
+  if (error) throw error;
+  return data || [];
+}
+
 // ---- GENERAR POSTVENTA ----
 // Crea las 3 tareas de postventa de una venta entregada que no las tenga,
 // vía la función SECURITY DEFINER `generar_postventa` (corre por fuera de

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { crear, obtener, actualizar, clientePorCuit } from '../../lib/db';
+import { crear, obtener, actualizar, clientePorCuit, clientesParecidos } from '../../lib/db';
 import { PageHeader, BackButton } from '../../shared/ui.jsx';
 import Icon from '../../shared/Icon.jsx';
 
@@ -22,10 +22,17 @@ export default function ClienteForm() {
   const [errores, setErrores] = useState({});
   const [guardando, setGuardando] = useState(false);
   const [duplicado, setDuplicado] = useState(null); // { cliente_id, es_propio, puede_ver, nombre }
+  const [parecidos, setParecidos] = useState([]);   // [{ cliente_id, puede_ver, nombre }]
 
   useEffect(() => {
     if (editando) {
-      obtener('clientes', id).then((c) => c && setForm({ ...c, tipo: normalizarTipo(c.tipo) }));
+      obtener('clientes', id).then((c) => c && setForm({
+        ...c,
+        tipo: normalizarTipo(c.tipo),
+        cuit: c.cuit || '', domicilio: c.domicilio || '', telefono: c.telefono || '',
+        mail: c.mail || '', observaciones: c.observaciones || '',
+        nombre: c.nombre || '', apellido: c.apellido || '', razon_social: c.razon_social || '',
+      }));
     }
   }, [id, editando]);
 
@@ -46,35 +53,50 @@ export default function ClienteForm() {
     return () => { cancelado = true; clearTimeout(t); };
   }, [form.cuit, id, editando]);
 
+  // Sin CUIT no hay forma segura de detectar un duplicado: avisamos (sin
+  // bloquear) si ya hay clientes con un nombre parecido.
+  const esPF = form.tipo === 'Persona física';
+  const textoNombre = (esPF ? `${form.nombre} ${form.apellido}` : form.razon_social).trim();
+  useEffect(() => {
+    if (form.cuit || textoNombre.length < 3) { setParecidos([]); return; }
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      try {
+        const r = await clientesParecidos(textoNombre, editando ? Number(id) : null);
+        if (!cancelado) setParecidos(r);
+      } catch { if (!cancelado) setParecidos([]); }
+    }, 500);
+    return () => { cancelado = true; clearTimeout(t); };
+  }, [textoNombre, form.cuit, id, editando]);
+
   const set = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
 
-  // Un vendedor no puede crear un cliente que ya existe y es de otro.
-  const bloqueadoPorDuplicado = !editando && duplicado && !duplicado.puede_ver;
+  // El CUIT es único: no se puede guardar uno que ya tiene otro cliente.
+  const bloqueadoPorDuplicado = Boolean(duplicado);
 
   function validar() {
     const e = {};
-    if (form.tipo === 'Persona física') {
-      if (!form.nombre) e.nombre = true;
-      if (!form.apellido) e.apellido = true;
-    } else {
-      if (!form.razon_social) e.razon_social = true;
+    if (!form.tipo) e.tipo = true;
+    if (esPF) {
+      if (!form.nombre.trim()) e.nombre = true;
+      if (!form.apellido.trim()) e.apellido = true;
+    } else if (!form.razon_social.trim()) {
+      e.razon_social = true;
     }
-    if (!form.cuit || form.cuit.length !== 11) e.cuit = true;
-    if (!form.domicilio) e.domicilio = true;
-    if (!form.telefono) e.telefono = true;
+    if (form.cuit && form.cuit.length !== 11) e.cuit = true;
     if (form.mail && !mailValido(form.mail)) e.mail = true;
     setErrores(e);
     return Object.keys(e).length === 0;
   }
 
   async function guardar() {
-    if (bloqueadoPorDuplicado) return; // no se puede crear un cliente de otro
+    if (bloqueadoPorDuplicado) return;
     if (!validar()) return;
     setGuardando(true);
     try {
+      const datos = { ...form, cuit: form.cuit || null };
       // Limpiamos el campo del tipo que no corresponde.
-      const datos = { ...form };
-      if (form.tipo === 'Persona física') { datos.razon_social = ''; }
+      if (esPF) { datos.razon_social = ''; }
       else { datos.nombre = ''; datos.apellido = ''; }
 
       if (editando) {
@@ -89,20 +111,23 @@ export default function ClienteForm() {
       }
     } catch (err) {
       console.error('Error al guardar cliente:', err);
-      alert('No se pudo guardar. Revisá la consola.');
+      // 23505 = violación del índice único de CUIT (alguien lo cargó recién).
+      alert(err?.code === '23505'
+        ? 'Ya existe otro cliente con ese CUIT. No se guardaron los cambios.'
+        : 'No se pudo guardar. Revisá la consola.');
     } finally {
       setGuardando(false);
     }
   }
 
-  const esPF = form.tipo === 'Persona física';
   const cuitCorto = form.cuit && form.cuit.length !== 11;
+  const estilo = (campo) => (errores[campo] ? { borderColor: 'var(--red)' } : undefined);
 
   return (
     <div>
       <PageHeader
         titulo={editando ? 'Editar cliente' : 'Nuevo cliente'}
-        sub="Empezá por el CUIT: el sistema chequea que no exista ya"
+        sub="Si tenés el CUIT, cargalo primero: el sistema chequea que el cliente no exista ya"
       >
         <BackButton to={editando ? `/clientes/${id}` : '/clientes'} />
       </PageHeader>
@@ -111,17 +136,17 @@ export default function ClienteForm() {
         <div className="form-grid">
           {/* CUIT primero */}
           <div className="field">
-            <label>CUIT <span className="req">*</span></label>
+            <label>CUIT</label>
             <input value={form.cuit} inputMode="numeric" autoFocus
               onChange={(e) => set('cuit', soloNumeros(e.target.value).slice(0, 11))}
               placeholder="11 dígitos, sin guiones"
-              style={errores.cuit ? { borderColor: 'var(--red)' } : undefined} />
+              style={estilo('cuit')} />
             {cuitCorto && <div className="hint" style={{ color: 'var(--red)' }}>El CUIT debe tener 11 dígitos.</div>}
           </div>
 
           <div className="field">
             <label>Tipo de cliente <span className="req">*</span></label>
-            <select value={form.tipo} onChange={(e) => set('tipo', e.target.value)}>
+            <select value={form.tipo} onChange={(e) => set('tipo', e.target.value)} style={estilo('tipo')}>
               <option>Persona jurídica</option>
               <option>Persona física</option>
             </select>
@@ -134,6 +159,7 @@ export default function ClienteForm() {
                 <div className="aviso bad" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <span className="grow">
                     Ya existe un cliente con este CUIT{duplicado.nombre ? <>: <b>{duplicado.nombre}</b></> : ''}.
+                    {editando && ' Es probable que sea el mismo cliente: contactá a un administrador para unificarlos.'}
                   </span>
                   <button className="btn ghost sm" onClick={() => navigate(`/clientes/${duplicado.cliente_id}`)}>
                     Ver ficha →
@@ -151,41 +177,52 @@ export default function ClienteForm() {
             <>
               <div className="field">
                 <label>Nombre <span className="req">*</span></label>
-                <input value={form.nombre} onChange={(e) => set('nombre', e.target.value)}
-                  style={errores.nombre ? { borderColor: 'var(--red)' } : undefined} />
+                <input value={form.nombre} onChange={(e) => set('nombre', e.target.value)} style={estilo('nombre')} />
               </div>
               <div className="field">
                 <label>Apellido <span className="req">*</span></label>
-                <input value={form.apellido} onChange={(e) => set('apellido', e.target.value)}
-                  style={errores.apellido ? { borderColor: 'var(--red)' } : undefined} />
+                <input value={form.apellido} onChange={(e) => set('apellido', e.target.value)} style={estilo('apellido')} />
               </div>
             </>
           ) : (
             <div className="field full">
               <label>Razón social <span className="req">*</span></label>
-              <input value={form.razon_social} onChange={(e) => set('razon_social', e.target.value)}
-                style={errores.razon_social ? { borderColor: 'var(--red)' } : undefined} />
+              <input value={form.razon_social} onChange={(e) => set('razon_social', e.target.value)} style={estilo('razon_social')} />
+            </div>
+          )}
+
+          {parecidos.length > 0 && (
+            <div className="field full">
+              <div className="aviso warn" style={{ display: 'block' }}>
+                Hay clientes con un nombre parecido. Revisá que no sea el mismo antes de crearlo:
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                  {parecidos.map((p) => (
+                    <li key={p.cliente_id}>
+                      {p.puede_ver
+                        ? <a onClick={() => navigate(`/clientes/${p.cliente_id}`)} style={{ cursor: 'pointer' }}>{p.nombre}</a>
+                        : 'Un cliente cargado por otro vendedor'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           )}
 
           <div className="field full">
-            <label>Domicilio fiscal <span className="req">*</span></label>
-            <input value={form.domicilio} onChange={(e) => set('domicilio', e.target.value)}
-              style={errores.domicilio ? { borderColor: 'var(--red)' } : undefined} />
+            <label>Domicilio fiscal</label>
+            <input value={form.domicilio} onChange={(e) => set('domicilio', e.target.value)} />
           </div>
 
           <div className="field">
-            <label>Teléfono <span className="req">*</span></label>
+            <label>Teléfono</label>
             <input value={form.telefono} inputMode="numeric"
               onChange={(e) => set('telefono', soloNumeros(e.target.value))}
-              placeholder="Solo números"
-              style={errores.telefono ? { borderColor: 'var(--red)' } : undefined} />
+              placeholder="Solo números" />
           </div>
           <div className="field">
             <label>Mail</label>
             <input value={form.mail} type="email" onChange={(e) => set('mail', e.target.value)}
-              placeholder="tu@empresa.com"
-              style={errores.mail ? { borderColor: 'var(--red)' } : undefined} />
+              placeholder="tu@empresa.com" style={estilo('mail')} />
             {errores.mail && <div className="hint" style={{ color: 'var(--red)' }}>Formato de mail inválido.</div>}
           </div>
 

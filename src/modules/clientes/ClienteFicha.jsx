@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { obtener, listar, crear } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha } from '../../shared/ui.jsx';
+import { obtener, listar, crear, actualizar } from '../../lib/db';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, AvisoClienteIncompleto } from '../../shared/ui.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 const TABS = ['Datos y contactos', 'Historial comercial', 'Ventas', 'Postventa', 'Service'];
@@ -47,10 +47,12 @@ export default function ClienteFicha() {
 
   return (
     <div>
-      <PageHeader titulo={nombreCliente(cliente)} sub={`${cliente.tipo} · CUIT ${cliente.cuit}`}>
+      <PageHeader titulo={nombreCliente(cliente)} sub={`${cliente.tipo} · ${cliente.cuit ? `CUIT ${cliente.cuit}` : 'Sin CUIT'}`}>
         <BackButton to="/clientes" />
         <button className="btn ghost sm" onClick={() => navigate(`/clientes/${id}/editar`)}>Editar</button>
       </PageHeader>
+
+      <AvisoClienteIncompleto cliente={cliente} />
 
       <div className="tabs-row">
         {TABS.map((t) => (
@@ -64,9 +66,9 @@ export default function ClienteFicha() {
             <div className="card-h">Datos del cliente</div>
             <div className="card-pad">
               <Row k="Tipo" v={cliente.tipo} />
-              <Row k="CUIT" v={cliente.cuit} />
-              <Row k="Domicilio" v={cliente.domicilio} />
-              <Row k="Teléfono" v={cliente.telefono} />
+              <Row k="CUIT" v={cliente.cuit || '—'} />
+              <Row k="Domicilio" v={cliente.domicilio || '—'} />
+              <Row k="Teléfono" v={cliente.telefono || '—'} />
               <Row k="Mail" v={cliente.mail || '—'} />
               <Row k="Observaciones" v={cliente.observaciones || '—'} />
               <Row k="Cargado por" v={usuarios.find((u) => u.id === cliente.creado_por)?.nombre || '—'} />
@@ -180,10 +182,11 @@ function ContactosCard({ clienteId, contactos, setContactos }) {
   const [form, setForm] = useState(null);
   const [errores, setErrores] = useState({});
 
+  const [guardando, setGuardando] = useState(false);
+
   function validar() {
     const e = {};
-    if (!form.nombre) e.nombre = true;
-    if (!form.telefono) e.telefono = true;
+    if (!form.nombre.trim()) e.nombre = true;
     if (form.mail && !mailValido(form.mail)) e.mail = true;
     setErrores(e);
     return Object.keys(e).length === 0;
@@ -191,65 +194,97 @@ function ContactosCard({ clienteId, contactos, setContactos }) {
 
   async function guardar() {
     if (!validar()) return;
-    const nuevo = await crear('contactos', { ...form, cliente_id: Number(clienteId) });
-    setContactos((cs) => [...cs, nuevo]);
-    setForm(null);
-    setErrores({});
+    setGuardando(true);
+    try {
+      const datos = {
+        nombre: form.nombre, apellido: form.apellido, cargo: form.cargo,
+        telefono: form.telefono, mail: form.mail,
+      };
+      if (form.id) {
+        const editado = await actualizar('contactos', form.id, datos);
+        setContactos((cs) => cs.map((c) => (c.id === form.id ? { ...c, ...datos, ...editado } : c)));
+      } else {
+        const nuevo = await crear('contactos', { ...datos, cliente_id: Number(clienteId) });
+        setContactos((cs) => [...cs, nuevo]);
+      }
+      cerrar();
+    } catch (err) {
+      console.error('Error al guardar contacto:', err);
+      alert('No se pudo guardar el contacto. Revisá la consola.');
+    } finally {
+      setGuardando(false);
+    }
   }
 
-  const abrir = () => { setErrores({}); setForm({ nombre: '', apellido: '', cargo: '', telefono: '', mail: '' }); };
+  const cerrar = () => { setForm(null); setErrores({}); };
+  const abrirNuevo = () => { setErrores({}); setForm({ nombre: '', apellido: '', cargo: '', telefono: '', mail: '' }); };
+  const abrirEdicion = (c) => {
+    setErrores({});
+    setForm({
+      id: c.id, nombre: c.nombre || '', apellido: c.apellido || '', cargo: c.cargo || '',
+      telefono: c.telefono || '', mail: c.mail || '',
+    });
+  };
+
+  const formulario = form && (
+    <div style={{ margin: '10px 0' }}>
+      <div className="form-grid">
+        <div className="field">
+          <label>Nombre *</label>
+          <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+            style={errores.nombre ? { borderColor: 'var(--red)' } : undefined} />
+        </div>
+        <div className="field">
+          <label>Apellido</label>
+          <input value={form.apellido} onChange={(e) => setForm({ ...form, apellido: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>Cargo</label>
+          <input value={form.cargo} onChange={(e) => setForm({ ...form, cargo: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>Teléfono</label>
+          <input value={form.telefono} inputMode="numeric"
+            onChange={(e) => setForm({ ...form, telefono: soloNumeros(e.target.value) })}
+            placeholder="Solo números" />
+        </div>
+        <div className="field full">
+          <label>Mail</label>
+          <input value={form.mail} type="email" onChange={(e) => setForm({ ...form, mail: e.target.value })}
+            style={errores.mail ? { borderColor: 'var(--red)' } : undefined} />
+          {errores.mail && <div className="hint" style={{ color: 'var(--red)' }}>Formato de mail inválido.</div>}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn sm" onClick={guardar} disabled={guardando}>
+          <Icon name="check" size={14} /> {guardando ? 'Guardando…' : 'Guardar'}
+        </button>
+        <button className="btn ghost sm" onClick={cerrar}>Cancelar</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="card">
       <div className="card-h">
         <span className="grow">Contactos ({contactos.length})</span>
-        {!form && <button className="btn ghost sm" onClick={abrir}>
+        {!form && <button className="btn ghost sm" onClick={abrirNuevo}>
           <Icon name="plus" size={14} /> Agregar</button>}
       </div>
       <div className="card-pad">
         {contactos.length === 0 && !form && <div className="muted sm">Sin contactos cargados.</div>}
-        {contactos.map((c) => (
-          <div key={c.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--line-2)' }}>
-            <div className="strong">{c.nombre} {c.apellido} {c.cargo && <span className="muted sm">· {c.cargo}</span>}</div>
-            <div className="muted sm">{c.telefono}{c.mail ? ` · ${c.mail}` : ''}</div>
-          </div>
-        ))}
-        {form && (
-          <div style={{ marginTop: 10 }}>
-            <div className="form-grid">
-              <div className="field">
-                <label>Nombre *</label>
-                <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                  style={errores.nombre ? { borderColor: 'var(--red)' } : undefined} />
-              </div>
-              <div className="field">
-                <label>Apellido</label>
-                <input value={form.apellido} onChange={(e) => setForm({ ...form, apellido: e.target.value })} />
-              </div>
-              <div className="field">
-                <label>Cargo</label>
-                <input value={form.cargo} onChange={(e) => setForm({ ...form, cargo: e.target.value })} />
-              </div>
-              <div className="field">
-                <label>Teléfono *</label>
-                <input value={form.telefono} inputMode="numeric"
-                  onChange={(e) => setForm({ ...form, telefono: soloNumeros(e.target.value) })}
-                  placeholder="Solo números"
-                  style={errores.telefono ? { borderColor: 'var(--red)' } : undefined} />
-              </div>
-              <div className="field full">
-                <label>Mail</label>
-                <input value={form.mail} type="email" onChange={(e) => setForm({ ...form, mail: e.target.value })}
-                  style={errores.mail ? { borderColor: 'var(--red)' } : undefined} />
-                {errores.mail && <div className="hint" style={{ color: 'var(--red)' }}>Formato de mail inválido.</div>}
-              </div>
+        {contactos.map((c) => (form && form.id === c.id ? (
+          <div key={c.id}>{formulario}</div>
+        ) : (
+          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--line-2)' }}>
+            <div className="grow">
+              <div className="strong">{c.nombre} {c.apellido} {c.cargo && <span className="muted sm">· {c.cargo}</span>}</div>
+              <div className="muted sm">{[c.telefono, c.mail].filter(Boolean).join(' · ') || 'Sin teléfono ni mail'}</div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn sm" onClick={guardar}><Icon name="check" size={14} /> Guardar</button>
-              <button className="btn ghost sm" onClick={() => { setForm(null); setErrores({}); }}>Cancelar</button>
-            </div>
+            {!form && <button className="btn ghost sm" onClick={() => abrirEdicion(c)}>Editar</button>}
           </div>
-        )}
+        )))}
+        {form && !form.id && formulario}
       </div>
     </div>
   );

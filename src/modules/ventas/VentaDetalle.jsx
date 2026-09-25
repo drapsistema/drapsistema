@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, crear, actualizar, generarPostventa } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, AvisoClienteIncompleto } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
@@ -165,6 +165,8 @@ export default function VentaDetalle() {
         sub={`Ganada el ${fmtFecha(venta.fecha_ganada)} · ${productos.length} equipos`}>
         <BackButton to="/ventas" />
       </PageHeader>
+
+      {!cancelada && <AvisoClienteIncompleto cliente={cliente} />}
 
       {cancelada && (
         <div className="aviso bad">Venta <b style={{ margin: '0 4px' }}>cancelada</b> el {fmtFecha(venta.fecha_cancel)} · motivo: {venta.motivo_cancel}</div>

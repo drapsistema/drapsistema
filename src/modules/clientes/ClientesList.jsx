@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listar } from '../../lib/db';
-import { PageHeader, Empty, nombreCliente } from '../../shared/ui.jsx';
+import { PageHeader, Empty, nombreCliente, datosFaltantesCliente } from '../../shared/ui.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 const COLS = [
@@ -101,10 +101,17 @@ export default function ClientesList() {
             <tbody>
               {filas.map((c) => (
                 <tr key={c.id} className="clickable" onClick={() => navigate(`/clientes/${c.id}`)}>
-                  <td className="strong">{nombreCliente(c)}</td>
+                  <td className="strong">
+                    {nombreCliente(c)}
+                    {datosFaltantesCliente(c).length > 0 && (
+                      <span className="badge a" style={{ marginLeft: 8 }} title={`Falta: ${datosFaltantesCliente(c).join(', ')}`}>
+                        Datos incompletos
+                      </span>
+                    )}
+                  </td>
                   <td><span className="badge">{c.tipo}</span></td>
-                  <td>{c.cuit}</td>
-                  <td>{c.telefono}</td>
+                  <td>{c.cuit || <span className="muted">—</span>}</td>
+                  <td>{c.telefono || <span className="muted">—</span>}</td>
                   <td>{c.mail || <span className="muted">—</span>}</td>
                   <td className="muted sm">{cargadoPor(c.creado_por)}</td>
                 </tr>
