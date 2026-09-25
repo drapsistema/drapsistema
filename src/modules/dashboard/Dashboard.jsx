@@ -150,6 +150,7 @@ function AdminDash({ d, usuarios }) {
           { texto: 'Visitas técnicas a coordinar', n: visitas.length, cl: 'a', to: '/postventa' },
           { texto: 'Service esperando repuestos', n: esperandoRep.length, cl: 'a', to: '/service' },
           { texto: 'Comisiones de tercerizados sin definir', n: comSinDef.length, cl: 'r', to: '/ventas' },
+          { texto: 'Clientes duplicados para unificar', n: d.unif.length, cl: 'a', to: '/clientes/unificaciones' },
         ]} />
       </div>
     </>
@@ -281,8 +282,9 @@ export default function Dashboard() {
     Promise.all([
       listar('oportunidades'), listar('clientes'), listar('ventas'),
       listar('tareas_postventa'), listar('trabajos'), listar('usuarios'),
-    ]).then(([op, clientes, ventas, tpost, trabajos, us]) => {
-      setD({ op, clientes, ventas, tpost, trabajos }); setUsuarios(us);
+      listar('solicitudes_unificacion', { estado: 'Pendiente' }).catch(() => []),
+    ]).then(([op, clientes, ventas, tpost, trabajos, us, unif]) => {
+      setD({ op, clientes: clientes.filter((c) => c.activo !== false), ventas, tpost, trabajos, unif }); setUsuarios(us);
     });
     obtener('configuracion', 1).then(setCfg).catch(() => {});
   }, []);

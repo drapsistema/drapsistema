@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listar } from '../../lib/db';
 import { PageHeader, Empty, nombreCliente, datosFaltantesCliente } from '../../shared/ui.jsx';
+import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 const COLS = [
@@ -19,13 +20,18 @@ export default function ClientesList() {
   const [cargando, setCargando] = useState(true);
   const [q, setQ] = useState('');
   const [sort, setSort] = useState({ col: 'nombre', dir: 'asc' });
+  const [pendientes, setPendientes] = useState(0);
   const navigate = useNavigate();
+  const { esAdmin } = useAuth();
 
   useEffect(() => {
     Promise.all([listar('clientes'), listar('usuarios')])
       .then(([data, us]) => { setUsuarios(us); setClientes(data.filter((c) => c.activo !== false)); })
       .catch((e) => console.error('Error al listar clientes:', e))
       .finally(() => setCargando(false));
+    // La tabla puede no existir todavía si no se corrió el SQL de unificación.
+    listar('solicitudes_unificacion', { estado: 'Pendiente' })
+      .then((ss) => setPendientes(ss.length)).catch(() => setPendientes(0));
   }, []);
 
   const cargadoPor = (uid) => usuarios.find((u) => u.id === uid)?.nombre || '—';
@@ -70,6 +76,19 @@ export default function ClientesList() {
           <Icon name="plus" size={16} /> Nuevo cliente
         </button>
       </PageHeader>
+
+      {pendientes > 0 && (
+        <div className="aviso warn" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="grow">
+            {esAdmin
+              ? <>Hay <b>{pendientes}</b> {pendientes === 1 ? 'solicitud' : 'solicitudes'} de unificación de clientes duplicados para revisar.</>
+              : <>Tenés <b>{pendientes}</b> {pendientes === 1 ? 'solicitud' : 'solicitudes'} de unificación esperando a un administrador.</>}
+          </span>
+          <button className="btn ghost sm" onClick={() => navigate('/clientes/unificaciones')}>
+            {esAdmin ? 'Revisar →' : 'Ver →'}
+          </button>
+        </div>
+      )}
 
       {!cargando && clientes.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 14 }}>

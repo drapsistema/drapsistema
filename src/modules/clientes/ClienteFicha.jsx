@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, crear, actualizar } from '../../lib/db';
 import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, AvisoClienteIncompleto } from '../../shared/ui.jsx';
+import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 const TABS = ['Datos y contactos', 'Historial comercial', 'Ventas', 'Postventa', 'Service'];
@@ -22,6 +23,7 @@ export default function ClienteFicha() {
   const [trabajos, setTrabajos] = useState([]);
   const [tareas, setTareas] = useState([]); // postventa (tareas de las ventas del cliente)
   const [tab, setTab] = useState('Datos y contactos');
+  const { esAdmin } = useAuth();
 
   useEffect(() => {
     obtener('clientes', id).then(setCliente);
@@ -49,10 +51,22 @@ export default function ClienteFicha() {
     <div>
       <PageHeader titulo={nombreCliente(cliente)} sub={`${cliente.tipo} · ${cliente.cuit ? `CUIT ${cliente.cuit}` : 'Sin CUIT'}`}>
         <BackButton to="/clientes" />
-        <button className="btn ghost sm" onClick={() => navigate(`/clientes/${id}/editar`)}>Editar</button>
+        {!cliente.unificado_en && (
+          <button className="btn ghost sm" onClick={() => navigate(`/clientes/${id}/editar`)}>Editar</button>
+        )}
+        {esAdmin && !cliente.unificado_en && cliente.activo !== false && (
+          <button className="btn ghost sm" onClick={() => navigate(`/clientes/unificar?origen=${id}`)}>Unificar con…</button>
+        )}
       </PageHeader>
 
-      <AvisoClienteIncompleto cliente={cliente} />
+      {cliente.unificado_en ? (
+        <div className="aviso bad" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="grow">Este cliente estaba duplicado y se unificó en otro. Todo su historial pasó a ese cliente.</span>
+          <button className="btn ghost sm" onClick={() => navigate(`/clientes/${cliente.unificado_en}`)}>Ir al cliente →</button>
+        </div>
+      ) : (
+        <AvisoClienteIncompleto cliente={cliente} />
+      )}
 
       <div className="tabs-row">
         {TABS.map((t) => (

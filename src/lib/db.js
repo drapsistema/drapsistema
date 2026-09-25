@@ -136,6 +136,34 @@ export async function clientesParecidos(texto, excluirId = null) {
   return data || [];
 }
 
+// ---- UNIFICAR CLIENTES (solo admin) ----
+// Pasa contactos, oportunidades, ventas y trabajos del cliente origen
+// (duplicado) al destino, completa datos faltantes y desactiva el origen.
+// Vía la función SECURITY DEFINER `unificar_clientes` (una transacción).
+export async function unificarClientes(origenId, destinoId) {
+  if (modoDemo) {
+    const o = demoStore.clientes.find((c) => c.id === Number(origenId));
+    const d = demoStore.clientes.find((c) => c.id === Number(destinoId));
+    const movidos = {};
+    ['contactos', 'oportunidades', 'ventas', 'trabajos'].forEach((t) => {
+      const filas = (demoStore[t] || []).filter((f) => f.cliente_id === o.id);
+      filas.forEach((f) => { f.cliente_id = d.id; });
+      movidos[t] = filas.length;
+    });
+    ['cuit', 'domicilio', 'telefono', 'mail'].forEach((k) => { if (!d[k]) d[k] = o[k]; });
+    Object.assign(o, { activo: false, unificado_en: d.id, cuit: null });
+    (demoStore.solicitudes_unificacion || []).forEach((s) => {
+      if (s.estado === 'Pendiente' && [o.id, d.id].includes(s.cliente_origen_id) && [o.id, d.id].includes(s.cliente_destino_id)) {
+        s.estado = 'Resuelta';
+      }
+    });
+    return movidos;
+  }
+  const { data, error } = await supabase.rpc('unificar_clientes', { p_origen: Number(origenId), p_destino: Number(destinoId) });
+  if (error) throw error;
+  return data;
+}
+
 // ---- GENERAR POSTVENTA ----
 // Crea las 3 tareas de postventa de una venta entregada que no las tenga,
 // vía la función SECURITY DEFINER `generar_postventa` (corre por fuera de

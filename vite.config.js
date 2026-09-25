@@ -14,5 +14,8 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true, // permite abrir la app desde el celular en la misma red (mobile testing)
+    // En Windows el watcher nativo a veces pierde ediciones seguidas y sirve
+    // una versión vieja del archivo; con polling no pasa.
+    watch: { usePolling: true, interval: 300 },
   },
 });

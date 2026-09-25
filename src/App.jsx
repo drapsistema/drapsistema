@@ -9,6 +9,7 @@ import Dashboard from './modules/dashboard/Dashboard.jsx';
 import ClientesList from './modules/clientes/ClientesList.jsx';
 import ClienteFicha from './modules/clientes/ClienteFicha.jsx';
 import ClienteForm from './modules/clientes/ClienteForm.jsx';
+import Unificaciones, { UnificarClientes } from './modules/clientes/Unificaciones.jsx';
 import Comercial from './modules/comercial/Comercial.jsx';
 import OportunidadDetalle from './modules/comercial/OportunidadDetalle.jsx';
 import OportunidadForm from './modules/comercial/OportunidadForm.jsx';
@@ -44,6 +45,8 @@ export default function App() {
 
         <Route path="clientes" element={<ProtegerModulo modulo="clientes"><ClientesList /></ProtegerModulo>} />
         <Route path="clientes/nuevo" element={<ProtegerModulo modulo="clientes"><ClienteForm /></ProtegerModulo>} />
+        <Route path="clientes/unificaciones" element={<ProtegerModulo modulo="clientes"><Unificaciones /></ProtegerModulo>} />
+        <Route path="clientes/unificar" element={<ProtegerModulo modulo="clientes"><UnificarClientes /></ProtegerModulo>} />
         <Route path="clientes/:id" element={<ProtegerModulo modulo="clientes"><ClienteFicha /></ProtegerModulo>} />
         <Route path="clientes/:id/editar" element={<ProtegerModulo modulo="clientes"><ClienteForm /></ProtegerModulo>} />
 

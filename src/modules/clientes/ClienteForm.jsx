@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { crear, obtener, actualizar, clientePorCuit, clientesParecidos } from '../../lib/db';
 import { PageHeader, BackButton } from '../../shared/ui.jsx';
+import { useToast } from '../../shared/Toast.jsx';
+import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
 const VACIO = {
@@ -23,6 +25,9 @@ export default function ClienteForm() {
   const [guardando, setGuardando] = useState(false);
   const [duplicado, setDuplicado] = useState(null); // { cliente_id, es_propio, puede_ver, nombre }
   const [parecidos, setParecidos] = useState([]);   // [{ cliente_id, puede_ver, nombre }]
+  const [solicitada, setSolicitada] = useState(false);
+  const toast = useToast();
+  const { esAdmin } = useAuth();
 
   useEffect(() => {
     if (editando) {
@@ -120,6 +125,25 @@ export default function ClienteForm() {
     }
   }
 
+  // Editando un cliente cuyo CUIT ya tiene otro: probablemente es el mismo
+  // cliente cargado dos veces. El vendedor pide al admin que los unifique.
+  async function solicitarUnificacion() {
+    try {
+      await crear('solicitudes_unificacion', {
+        cliente_origen_id: Number(id),
+        cliente_destino_id: duplicado.cliente_id,
+        motivo: `Mismo CUIT: ${form.cuit}`,
+        estado: 'Pendiente',
+      });
+      setSolicitada(true);
+      toast('Solicitud enviada · un administrador va a unificar los clientes');
+    } catch (err) {
+      if (err?.code === '23505') { setSolicitada(true); toast('Ya hay una solicitud pendiente para estos clientes'); return; }
+      console.error('Error al solicitar unificación:', err);
+      toast('No se pudo enviar la solicitud', 'err');
+    }
+  }
+
   const cuitCorto = form.cuit && form.cuit.length !== 11;
   const estilo = (campo) => (errores[campo] ? { borderColor: 'var(--red)' } : undefined);
 
@@ -155,21 +179,31 @@ export default function ClienteForm() {
           {/* Aviso de duplicado según quién esté cargando */}
           {duplicado && (
             <div className="field full">
-              {duplicado.puede_ver ? (
-                <div className="aviso bad" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span className="grow">
-                    Ya existe un cliente con este CUIT{duplicado.nombre ? <>: <b>{duplicado.nombre}</b></> : ''}.
-                    {editando && ' Es probable que sea el mismo cliente: contactá a un administrador para unificarlos.'}
-                  </span>
+              <div className="aviso bad" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span className="grow">
+                  {duplicado.puede_ver
+                    ? <>Ya existe un cliente con este CUIT{duplicado.nombre ? <>: <b>{duplicado.nombre}</b></> : ''}.</>
+                    : 'Este cliente ya existe y está asignado a otro vendedor.'}
+                  {editando
+                    ? ' Es probable que sea el mismo cliente cargado dos veces: pedí que se unifiquen.'
+                    : !duplicado.puede_ver && ' Contactate con un administrador para resolverlo.'}
+                </span>
+                {duplicado.puede_ver && (
                   <button className="btn ghost sm" onClick={() => navigate(`/clientes/${duplicado.cliente_id}`)}>
                     Ver ficha →
                   </button>
-                </div>
-              ) : (
-                <div className="aviso bad">
-                  Este cliente ya existe y está asignado a otro vendedor. Contactate con un administrador para resolverlo.
-                </div>
-              )}
+                )}
+                {editando && esAdmin && (
+                  <button className="btn sm" onClick={() => navigate(`/clientes/unificar?origen=${id}&destino=${duplicado.cliente_id}`)}>
+                    Unificar ahora
+                  </button>
+                )}
+                {editando && !esAdmin && (
+                  <button className="btn sm" onClick={solicitarUnificacion} disabled={solicitada}>
+                    {solicitada ? 'Solicitud enviada ✓' : 'Solicitar unificación'}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
