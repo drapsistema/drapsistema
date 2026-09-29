@@ -193,6 +193,89 @@ export async function generarPostventa(ventaId) {
   return data;
 }
 
+// ---- BUSCAR EN EL CATÁLOGO ----
+// Busca por descripción, SKU o código DJI en la base (el catálogo supera
+// las 1.000 filas que devuelve una consulta, así que no se trae entero).
+// Devuelve { filas, total }. soloActivos=false para la pantalla de admin.
+export async function buscarCatalogo(texto, { limite = 15, soloActivos = true } = {}) {
+  const t = (texto || '').trim();
+  if (modoDemo) {
+    const q = t.toLowerCase();
+    const filas = (demoStore.productos_catalogo || [])
+      .filter((p) => (!soloActivos || p.activo !== false)
+        && (!q || [p.descripcion, p.sku, p.codigo].some((v) => (v || '').toLowerCase().includes(q))));
+    return { filas: filas.slice(0, limite), total: filas.length };
+  }
+  let query = supabase.from('productos_catalogo').select('*', { count: 'exact' });
+  if (soloActivos) query = query.eq('activo', true);
+  // Caracteres que rompen la sintaxis del filtro `or` de PostgREST.
+  const limpio = t.replace(/[,()%*\\]/g, ' ').trim();
+  if (limpio) query = query.or(`descripcion.ilike.%${limpio}%,sku.ilike.%${limpio}%,codigo.ilike.%${limpio}%`);
+  const { data, error, count } = await query.order('descripcion').limit(limite);
+  if (error) throw error;
+  return { filas: data || [], total: count ?? (data || []).length };
+}
+
+// ---- CATÁLOGO COMPLETO (exportar) ----
+// Trae todas las filas en tandas de 1.000 (límite por consulta de Supabase).
+export async function catalogoCompleto() {
+  if (modoDemo) return [...(demoStore.productos_catalogo || [])];
+  const todas = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await supabase.from('productos_catalogo').select('*').order('sku').range(desde, desde + 999);
+    if (error) throw error;
+    todas.push(...data);
+    if (data.length < 1000) return todas;
+  }
+}
+
+// ---- IMPORTAR CATÁLOGO ----
+// Crea o actualiza productos por SKU (solo admin). Devuelve cuántos procesó.
+export async function importarCatalogo(filas) {
+  if (modoDemo) {
+    filas.forEach((f) => {
+      const p = (demoStore.productos_catalogo || []).find((x) => x.sku === f.sku);
+      if (p) Object.assign(p, f);
+      else demoStore.productos_catalogo.push({ ...f, id: nextId('productos_catalogo'), activo: f.activo ?? true });
+    });
+    return filas.length;
+  }
+  for (let i = 0; i < filas.length; i += 500) {
+    const tanda = filas.slice(i, i + 500).map((f) => ({ ...f, actualizado_en: new Date().toISOString() }));
+    const { error } = await supabase.from('productos_catalogo').upsert(tanda, { onConflict: 'sku' });
+    if (error) throw error;
+  }
+  return filas.length;
+}
+
+// ---- NUMERACIÓN DE PRESUPUESTOS ----
+// PRE-2026-0001, correlativo por año, vía la función SECURITY DEFINER
+// `siguiente_nro_presupuesto` (atómica; sirve a vendedores y técnicos).
+export async function siguienteNroPresupuesto() {
+  if (modoDemo) {
+    const cfg = (demoStore.configuracion || []).find((c) => c.id === 1);
+    const anio = new Date().getFullYear();
+    cfg.pres_actual = cfg.pres_anio === anio ? (cfg.pres_actual || 0) + 1 : 1;
+    cfg.pres_anio = anio;
+    return `PRE-${anio}-${String(cfg.pres_actual).padStart(4, '0')}`;
+  }
+  const { data, error } = await supabase.rpc('siguiente_nro_presupuesto');
+  if (error) throw error;
+  return data;
+}
+
+// ---- MI CONTACTO ----
+// Cada usuario carga su teléfono y WhatsApp (salen en sus presupuestos).
+export async function actualizarMiContacto(usuarioId, telefono, whatsapp) {
+  if (modoDemo) {
+    const u = (demoStore.usuarios || []).find((x) => x.id === Number(usuarioId));
+    if (u) Object.assign(u, { telefono: telefono || null, whatsapp: whatsapp || null });
+    return;
+  }
+  const { error } = await supabase.rpc('actualizar_mi_contacto', { p_telefono: telefono, p_whatsapp: whatsapp });
+  if (error) throw error;
+}
+
 // ---- NUMERACIÓN DE SERVICE (OT / remito) ----
 // Pide el próximo número correlativo a la función SECURITY DEFINER
 // `siguiente_nro_trabajo` (atómica, y habilitada para técnicos).

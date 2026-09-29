@@ -8,7 +8,7 @@ import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import { esAdministrador, usuariosConRolPrefijo } from '../../shared/permisos';
 import Icon from '../../shared/Icon.jsx';
-import { ETAPAS, REQUISITOS, camposFaltantes, completarEtapa, avanzarEtapa, reabrirOportunidad } from './etapas.js';
+import { ETAPAS, REQUISITOS, camposFaltantes, completarEtapa, avanzarEtapa, reabrirOportunidad, faltaPresupuesto } from './etapas.js';
 
 export default function OportunidadDetalle() {
   const { id } = useParams();
@@ -71,14 +71,14 @@ export default function OportunidadDetalle() {
     });
   }
 
+  const irAPresupuestar = () => navigate(`/presupuestos/nuevo?oportunidad=${op.id}`);
+  // Cerrar sin presupuesto no se puede: primero se arma.
+  const abrirCierre = () => {
+    if (faltaPresupuesto(op, 'Cierre', ctx)) { toast('Para cerrar la oportunidad primero armá el presupuesto'); irAPresupuestar(); return; }
+    setAccion('cierre');
+  };
+
   const ACCIONES = {
-    coti: {
-      titulo: 'Agregar cotización',
-      subtitulo: 'Registrá la cotización enviada al cliente.',
-      campos: REQUISITOS['Cotización'].campos,
-      textoConfirmar: 'Guardar cotización',
-      run: (valores) => completarEtapa(op, 'Cotización', valores, ctx),
-    },
     seg: {
       titulo: 'Registrar seguimiento',
       subtitulo: 'Dejá constancia del contacto con el cliente.',
@@ -156,9 +156,9 @@ export default function OportunidadDetalle() {
         sub={`Etapa: ${op.etapa}${intentoActual > 1 ? ` · intento ${intentoActual}` : ''} · primer contacto ${fmtFecha(op.fecha_contacto)}`}>
         <BackButton to="/comercial" />
         {!cerrada && <>
-          <button className="btn ghost" onClick={() => setAccion('coti')}>+ Cotización</button>
+          <button className="btn ghost" onClick={irAPresupuestar}>+ Presupuesto</button>
           <button className="btn ghost" onClick={() => setAccion('seg')}>+ Seguimiento</button>
-          <button className="btn" onClick={() => setAccion('cierre')}><Icon name="check" size={15} /> Cerrar</button>
+          <button className="btn" onClick={abrirCierre}><Icon name="check" size={15} /> Cerrar</button>
         </>}
         {op.resultado === 'Ganada' && venta &&
           <button className="btn ghost" onClick={() => navigate(`/ventas/${venta.id}`)}>Ver venta</button>}
@@ -200,18 +200,22 @@ export default function OportunidadDetalle() {
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-h">
-              <span className="grow">Cotizaciones ({cotisActuales.length})</span>
-              {!cerrada && <button className="btn ghost sm" onClick={() => setAccion('coti')}>+ Agregar</button>}
+              <span className="grow">Presupuestos ({cotisActuales.length})</span>
+              {!cerrada && <button className="btn ghost sm" onClick={irAPresupuestar}>+ Nuevo</button>}
             </div>
             <div className="table-wrap">
-              {cotisActuales.length === 0 ? <Empty>Sin cotizaciones en este intento.</Empty> : (
+              {cotisActuales.length === 0 ? <Empty>Sin presupuestos en este intento.</Empty> : (
                 <table>
-                  <thead><tr><th>Versión</th><th>Referencia</th><th>Envío</th><th>Días</th></tr></thead>
+                  <thead><tr><th>Versión</th><th>Presupuesto</th><th>Fecha</th><th>Días</th></tr></thead>
                   <tbody>
                     {cotisActuales.map((c) => (
-                      <tr key={c.id}>
+                      <tr key={c.id} className={c.presupuesto_id ? 'clickable' : undefined}
+                        onClick={() => c.presupuesto_id && navigate(`/presupuestos/${c.presupuesto_id}`)}>
                         <td className="strong">v{c.version}</td>
-                        <td><span className="badge b">{c.pdf}</span></td>
+                        <td>
+                          <span className="badge b">{c.pdf}</span>
+                          {!c.presupuesto_id && <span className="muted sm" style={{ marginLeft: 6 }}>(referencia anterior)</span>}
+                        </td>
                         <td>{fmtFecha(c.fecha_envio)}</td>
                         <td>{diasDesde(c.fecha_envio)}</td>
                       </tr>

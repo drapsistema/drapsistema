@@ -42,25 +42,12 @@ export const REQUISITOS = {
   },
 
   'Cotización': {
+    // Se cumple con un presupuesto armado en el sistema (el presupuestador
+    // deja su registro en `cotizaciones`). No tiene campos para el modal:
+    // si falta, se manda al usuario al presupuestador (ver faltaPresupuesto).
     cumplido: (ctx, op) => delIntento(ctx.cotizaciones, op).length > 0,
-    campos: [
-      // Guardamos SOLO un número de referencia (no el archivo) para no
-      // cargar peso a la base. El PDF vive donde el vendedor lo tenga.
-      { name: 'coti_ref', label: 'Número de referencia de la cotización', type: 'text', required: true,
-        placeholder: 'Ej: COT-000142' },
-      { name: 'coti_fecha', label: 'Fecha de envío', type: 'date', required: true, default: hoyISO() },
-    ],
-    crearRegistro: async (op, valores, ctx) => {
-      const intento = op.intento || 1;
-      const version = delIntento(ctx.cotizaciones, op).length + 1; // versión dentro del intento
-      await crear('cotizaciones', {
-        oportunidad_id: op.id,
-        intento,
-        version,
-        pdf: valores.coti_ref,
-        fecha_envio: valores.coti_fecha || hoyISO(),
-      });
-    },
+    campos: [],
+    requierePresupuesto: true,
   },
 
   'Seguimiento': {
@@ -122,6 +109,31 @@ function etapaMax(a, b) {
 // intentos anteriores quedaron como historial tras un recontacto.
 const delIntento = (lista, op) => (lista || []).filter((r) => (r.intento || 1) === (op?.intento || 1));
 
+// ¿Para llegar a `hacia` falta armar el presupuesto? (Cotización o más allá,
+// sin presupuesto en el intento actual). En ese caso no se abre el modal:
+// se lleva al usuario al presupuestador.
+export function faltaPresupuesto(op, hacia, ctx) {
+  return idx(hacia) >= idx('Cotización') && !REQUISITOS['Cotización'].cumplido(ctx, op);
+}
+
+// Registra en el pipeline un presupuesto recién guardado: crea la
+// cotización (versión dentro del intento) y lleva la oportunidad a
+// Cotización si estaba antes.
+export async function registrarPresupuesto(op, presupuesto, ctx) {
+  const version = delIntento(ctx.cotizaciones, op).length + 1;
+  await crear('cotizaciones', {
+    oportunidad_id: op.id,
+    intento: op.intento || 1,
+    version,
+    pdf: `${presupuesto.numero} v${presupuesto.version}`,
+    fecha_envio: presupuesto.fecha || hoyISO(),
+    presupuesto_id: presupuesto.id,
+  });
+  if (idx(op.etapa) < idx('Cotización')) {
+    await actualizar('oportunidades', op.id, { etapa: 'Cotización' });
+  }
+}
+
 // Campos que faltan para que `op` llegue a la etapa `hacia`.
 // Recorre todas las etapas intermedias no cumplidas y junta sus
 // campos (acumulativo). Si no falta nada, devuelve [].
@@ -176,6 +188,7 @@ async function crearVentaGanada(op) {
 export async function avanzarEtapa(op, hacia, valores, ctx) {
   const iH = idx(hacia), iA = idx(op.etapa);
   if (iH <= iA) return { ok: true };
+  if (faltaPresupuesto(op, hacia, ctx)) return { ok: false, faltaPresupuesto: true };
 
   let camposOp = {};
   for (let i = 1; i <= iH; i++) {

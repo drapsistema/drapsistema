@@ -2,12 +2,18 @@ import { useState, useEffect } from 'react';
 import { obtener, actualizar } from '../../lib/db';
 import { useToast } from '../../shared/Toast.jsx';
 import Icon from '../../shared/Icon.jsx';
+import { parseArray } from '../../shared/permisos';
 
 export default function Parametros() {
   const [cfg, setCfg] = useState(null);
   const toast = useToast();
 
-  useEffect(() => { obtener('configuracion', 1).then(setCfg); }, []);
+  useEffect(() => {
+    obtener('configuracion', 1).then((c) => setCfg(c && {
+      ...c,
+      pres_tipos: parseArray(c.pres_tipos), pres_condiciones: parseArray(c.pres_condiciones), pres_validez: parseArray(c.pres_validez),
+    }));
+  }, []);
   if (!cfg) return null;
 
   const set = (k, v) => setCfg((c) => ({ ...c, [k]: v }));
@@ -26,6 +32,9 @@ export default function Parametros() {
       sem_post_amarillo: Number(cfg.sem_post_amarillo) || 0,
       sem_serv_verde: Number(cfg.sem_serv_verde) || 0,
       sem_serv_amarillo: Number(cfg.sem_serv_amarillo) || 0,
+      pres_tipos: lineas(cfg.pres_tipos),
+      pres_condiciones: lineas(cfg.pres_condiciones),
+      pres_validez: lineas(cfg.pres_validez),
       vendedores_ven_todo: Boolean(cfg.vendedores_ven_todo),
     };
     try {
@@ -89,6 +98,20 @@ export default function Parametros() {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-h">Opciones de los presupuestos</div>
+        <div className="card-pad">
+          <div className="hint" style={{ marginBottom: 10 }}>Una opción por línea. La primera es la que aparece elegida por defecto.</div>
+          <div className="form-grid">
+            <ListaEditable label="Tipos de presupuesto" valor={cfg.pres_tipos} onChange={(v) => set('pres_tipos', v)} />
+            <ListaEditable label="Condiciones de pago" valor={cfg.pres_condiciones} onChange={(v) => set('pres_condiciones', v)} />
+            <div className="full">
+              <ListaEditable label="Validez" valor={cfg.pres_validez} onChange={(v) => set('pres_validez', v)} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-h"><Icon name="clientes" size={16} /> Alcance de datos de vendedores</div>
         <div className="card-pad">
           <div className="aviso">Define qué clientes, oportunidades y ventas ve un vendedor. No aplica a los vendedores tercerizados, que siempre ven solo lo suyo.</div>
@@ -104,6 +127,23 @@ export default function Parametros() {
       </div>
 
       <button className="btn" onClick={guardar}><Icon name="check" size={16} /> Guardar parámetros</button>
+    </div>
+  );
+}
+
+// Texto (una opción por línea) → lista sin vacíos ni repetidos.
+function lineas(valor) {
+  const arr = Array.isArray(valor) ? valor : String(valor || '').split('\n');
+  return [...new Set(arr.map((s) => s.trim()).filter(Boolean))];
+}
+
+// Se edita como texto libre y se convierte en lista recién al guardar.
+function ListaEditable({ label, valor, onChange }) {
+  const texto = Array.isArray(valor) ? valor.join('\n') : (valor || '');
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <textarea rows={5} value={texto} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }

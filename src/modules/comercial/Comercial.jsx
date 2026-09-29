@@ -4,7 +4,7 @@ import { listar, obtener } from '../../lib/db';
 import { PageHeader, nombreCliente, diasDesde } from '../../shared/ui.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import Board, { TotalVisibles } from '../../shared/Board.jsx';
-import { ETAPAS, camposFaltantes, avanzarEtapa } from './etapas.js';
+import { ETAPAS, camposFaltantes, avanzarEtapa, faltaPresupuesto } from './etapas.js';
 import ListaOportunidades from './ListaOportunidades.jsx';
 import { esGanada, claseResultado, BadgeResultado } from './resultado.jsx';
 import { todosPlegados } from '../../shared/ListaAgrupada.jsx';
@@ -92,7 +92,9 @@ export default function Comercial() {
   if (filtroEtapa) items = items.filter((i) => i.estado === filtroEtapa);
 
   // Qué campos faltan para llevar esta oportunidad a `hacia` (acumulativo).
-  const camposTransicion = (item, hacia) => camposFaltantes(item, hacia, item._ctx);
+  // Sin presupuesto no se abre el modal: mover() lleva al presupuestador.
+  const camposTransicion = (item, hacia) => (faltaPresupuesto(item, hacia, item._ctx)
+    ? [] : camposFaltantes(item, hacia, item._ctx));
 
   async function mover(item, hacia, valores) {
     const iA = ETAPAS.indexOf(item.estado), iH = ETAPAS.indexOf(hacia);
@@ -100,6 +102,11 @@ export default function Comercial() {
     if (iH === iA) return;
     try {
       const res = await avanzarEtapa(item, hacia, valores, item._ctx);
+      if (res.faltaPresupuesto) {
+        toast(`Para pasar a ${hacia} primero armá el presupuesto`);
+        navigate(`/presupuestos/nuevo?oportunidad=${item.id}`);
+        return;
+      }
       if (res.ventaId) {
         toast('Oportunidad ganada · venta creada');
         navigate(`/ventas/${res.ventaId}`);

@@ -6,10 +6,12 @@ import { useAuth } from './Auth.jsx';
 // Nota: esto es comodidad/UX del frontend. La seguridad REAL la darán las
 // políticas RLS de Supabase (Tanda B2): aunque alguien fuerce la URL o la API,
 // la base no le devuelve datos que su rol no permite.
+// `modulo` puede ser uno o una lista (alcanza con tener acceso a alguno).
 export default function ProtegerModulo({ modulo, children }) {
   const { modulos, cargando } = useAuth();
   if (cargando) return null;
-  if (!modulos.has(modulo)) {
+  const alguno = (Array.isArray(modulo) ? modulo : [modulo]).some((m) => modulos.has(m));
+  if (!alguno) {
     // Buscar el primer módulo que sí puede ver, para no dejarlo en una pantalla vacía.
     const destino = modulos.has('dashboard') ? '/dashboard'
       : modulos.size > 0 ? '/' + [...modulos][0]

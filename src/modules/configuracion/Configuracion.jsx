@@ -8,6 +8,8 @@ import { rolesDe, esAdministrador, ROLES, toggleRolExcluyente } from '../../shar
 import Icon from '../../shared/Icon.jsx';
 import Parametros from './Parametros.jsx';
 import Permisos from './Permisos.jsx';
+import Catalogo from './Catalogo.jsx';
+import ModalCampos from '../../shared/ModalCampos.jsx';
 
 export default function Configuracion() {
   const [tab, setTab] = useState('usuarios');
@@ -18,9 +20,11 @@ export default function Configuracion() {
         <button className={'tab' + (tab === 'usuarios' ? ' on' : '')} onClick={() => setTab('usuarios')}>Usuarios y roles</button>
         <button className={'tab' + (tab === 'permisos' ? ' on' : '')} onClick={() => setTab('permisos')}>Permisos</button>
         <button className={'tab' + (tab === 'parametros' ? ' on' : '')} onClick={() => setTab('parametros')}>Parámetros</button>
+        <button className={'tab' + (tab === 'catalogo' ? ' on' : '')} onClick={() => setTab('catalogo')}>Catálogo</button>
       </div>
       <div style={{ marginTop: 16 }}>
-        {tab === 'usuarios' ? <Usuarios /> : tab === 'permisos' ? <Permisos /> : <Parametros />}
+        {tab === 'usuarios' ? <Usuarios /> : tab === 'permisos' ? <Permisos />
+          : tab === 'catalogo' ? <Catalogo /> : <Parametros />}
       </div>
     </div>
   );
@@ -30,6 +34,7 @@ function Usuarios() {
   const [usuarios, setUsuarios] = useState([]);
   const [modal, setModal] = useState(null); // { usuario } para blanqueo
   const [modalRoles, setModalRoles] = useState(null); // { usuario } para editar roles
+  const [modalContacto, setModalContacto] = useState(null); // usuario a editar contacto
   const navigate = useNavigate();
   const toast = useToast();
   const { usuarioActualId } = useAuth();
@@ -94,6 +99,24 @@ function Usuarios() {
     cargar();
   }
 
+  // Teléfono, WhatsApp y cargo: salen en los presupuestos del usuario.
+  async function guardarContacto(valores) {
+    const u = modalContacto;
+    try {
+      await actualizar('usuarios', u.id, {
+        telefono: (valores.telefono || '').trim() || null,
+        whatsapp: (valores.whatsapp || '').trim() || null,
+        cargo: (valores.cargo || '').trim() || 'Asesor Comercial',
+      });
+      setModalContacto(null);
+      toast(`Contacto de ${u.nombre} actualizado`);
+      cargar();
+    } catch (err) {
+      console.error(err);
+      toast('No se pudo guardar el contacto', 'err');
+    }
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
@@ -103,7 +126,7 @@ function Usuarios() {
 
       <div className="card table-wrap">
         <table>
-          <thead><tr><th>Nombre</th><th>Mail</th><th>Rol</th><th>Acceso</th><th>Contraseña</th><th>Gestión</th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Mail</th><th>Rol</th><th>Contacto</th><th>Acceso</th><th>Contraseña</th><th>Gestión</th></tr></thead>
           <tbody>
             {usuarios.map((u) => (
               <tr key={u.id} className={u.acceso !== 'Activo' ? 'urow-off' : ''}>
@@ -113,6 +136,17 @@ function Usuarios() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {rolesDe(u).map((r) => <span key={r} className={'badge ' + (r === 'Administrador' ? 'b' : '')}>{r}</span>)}
                     <button className="ibtn" title="Editar roles" onClick={() => setModalRoles({ usuario: u })}><Icon name="edit" size={13} /></button>
+                  </div>
+                </td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div className="sm">
+                      {u.telefono || u.whatsapp
+                        ? <>{u.telefono && <div>Tel. {u.telefono}</div>}{u.whatsapp && <div>WA {u.whatsapp}</div>}</>
+                        : <span className="muted">Sin cargar</span>}
+                      <div className="muted xs">{u.cargo || 'Asesor Comercial'}</div>
+                    </div>
+                    <button className="ibtn" title="Editar contacto" onClick={() => setModalContacto(u)}><Icon name="edit" size={13} /></button>
                   </div>
                 </td>
                 <td>{badgeAcceso(u)}</td>
@@ -139,6 +173,21 @@ function Usuarios() {
 
       {modal && <ModalBlanqueo usuario={modal.usuario} onCerrar={() => setModal(null)} onConfirmar={confirmarBlanqueo} />}
       {modalRoles && <ModalRoles usuario={modalRoles.usuario} onCerrar={() => setModalRoles(null)} onConfirmar={guardarRoles} />}
+      {modalContacto && (
+        <ModalCampos
+          titulo={`Contacto de ${modalContacto.nombre}`}
+          subtitulo="Estos datos salen en los presupuestos que emite."
+          campos={[
+            { name: 'telefono', label: 'Teléfono', type: 'text', placeholder: '+54 387 …' },
+            { name: 'whatsapp', label: 'WhatsApp', type: 'text', placeholder: '+54 9 387 …' },
+            { name: 'cargo', label: 'Cargo', type: 'text', placeholder: 'Asesor Comercial' },
+          ]}
+          valoresIniciales={{ telefono: modalContacto.telefono || '', whatsapp: modalContacto.whatsapp || '', cargo: modalContacto.cargo || 'Asesor Comercial' }}
+          textoConfirmar="Guardar"
+          onConfirm={guardarContacto}
+          onCancel={() => setModalContacto(null)}
+        />
+      )}
     </div>
   );
 }

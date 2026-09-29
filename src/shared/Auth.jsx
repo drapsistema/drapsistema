@@ -103,6 +103,11 @@ export function AuthProvider({ children }) {
     // set de ids de módulos que el usuario puede ver (según sus roles + la matriz)
     modulos: modulosVisibles(perfil, permisos),
     recargarPermisos: () => cargarPermisos().then(setPermisos),
+    // Vuelve a leer la fila del usuario (ej: después de editar su contacto).
+    recargarPerfil: async () => {
+      const us = await listar('usuarios');
+      setPerfil(us.find((u) => u.id === perfil?.id) || perfil);
+    },
   };
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;

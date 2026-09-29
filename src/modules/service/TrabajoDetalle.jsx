@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, crear, actualizar, eliminar } from '../../lib/db';
 import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, diasDesde } from '../../shared/ui.jsx';
 import { usuariosConRol } from '../../shared/permisos';
@@ -10,6 +10,7 @@ import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 import { ESTADOS_SERVICE } from './service.js';
 import { GarantiasCard, textoGarantia } from './Garantias.jsx';
+import { conMoneda, nombreVersion } from '../presupuestos/calculo.js';
 
 export default function TrabajoDetalle() {
   const { id } = useParams();
@@ -20,6 +21,8 @@ export default function TrabajoDetalle() {
   const [tareas, setTareas] = useState([]);
   const [repuestos, setRepuestos] = useState([]);
   const [garantias, setGarantias] = useState([]);
+  const [presupuestos, setPresupuestos] = useState([]);
+  const navigate = useNavigate();
   const [tecnicos, setTecnicos] = useState([]);
   const [asignarTec, setAsignarTec] = useState('');
   const [diagInput, setDiagInput] = useState('');
@@ -39,6 +42,7 @@ export default function TrabajoDetalle() {
       setRepuestos(await listar('repuestos', { trabajo_id: Number(id) }));
       // La tabla puede no existir si todavía no se corrió el SQL de garantías.
       setGarantias(await listar('garantias_trabajo', { trabajo_id: Number(id) }).catch(() => []));
+      setPresupuestos(await listar('presupuestos', { trabajo_id: Number(id) }).catch(() => []));
       setTecnicos(usuariosConRol(await listar('usuarios'), 'Técnico'));
       setDiagInput(t.diagnostico || '');
     }
@@ -276,6 +280,26 @@ export default function TrabajoDetalle() {
 
           <GarantiasCard trabajoId={id} garantias={garantias} editable={estado !== 'Entregada'}
             recargar={cargar} toast={toast} usuarioActualId={usuarioActualId} />
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-h">
+              <span className="grow">Presupuestos ({presupuestos.length})</span>
+              {!cerrado && (
+                <button className="btn ghost sm" onClick={() => navigate(`/presupuestos/nuevo?trabajo=${id}`)}>+ Presupuestar reparación</button>
+              )}
+            </div>
+            <div className="card-pad">
+              {presupuestos.length === 0 ? <div className="muted sm">Sin presupuestos.</div> :
+                [...presupuestos].sort((a, b) => b.id - a.id).map((p) => (
+                  <div key={p.id} onClick={() => navigate(`/presupuestos/${p.id}`)}
+                    style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--line-2)', cursor: 'pointer' }}>
+                    <span className="badge b">{nombreVersion(p)}</span>
+                    <span className="grow muted sm">{fmtFecha(p.fecha)}</span>
+                    <span className="strong sm">{conMoneda(p.moneda, p.total)}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
 
           {puedeInforme && (
             <div className="card" style={{ marginTop: 16 }}>

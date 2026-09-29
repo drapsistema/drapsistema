@@ -24,6 +24,9 @@ import TrabajoDetalle from './modules/service/TrabajoDetalle.jsx';
 import TrabajoForm from './modules/service/TrabajoForm.jsx';
 import Configuracion from './modules/configuracion/Configuracion.jsx';
 import UsuarioForm from './modules/configuracion/UsuarioForm.jsx';
+import PresupuestoForm from './modules/presupuestos/PresupuestoForm.jsx';
+import PresupuestoVer from './modules/presupuestos/PresupuestoVer.jsx';
+import MiPerfil from './modules/perfil/MiPerfil.jsx';
 
 export default function App() {
   const { autenticado, cargando } = useAuth();
@@ -70,6 +73,11 @@ export default function App() {
 
         <Route path="configuracion" element={<ProtegerModulo modulo="configuracion"><Configuracion /></ProtegerModulo>} />
         <Route path="configuracion/usuario-nuevo" element={<ProtegerModulo modulo="configuracion"><UsuarioForm /></ProtegerModulo>} />
+
+        <Route path="presupuestos/nuevo" element={<ProtegerModulo modulo={['comercial', 'service']}><PresupuestoForm /></ProtegerModulo>} />
+        <Route path="presupuestos/:id" element={<ProtegerModulo modulo={['comercial', 'service']}><PresupuestoVer /></ProtegerModulo>} />
+
+        <Route path="perfil" element={<MiPerfil />} />
 
         <Route path="sin-acceso" element={<SinAcceso />} />
 

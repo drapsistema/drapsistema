@@ -26,7 +26,7 @@ export const demoSeed = {
   // Ve la suma de lo que permiten sus roles.
   usuarios: [
     { id: 1, nombre: 'M. Alvarez', mail: 'malvarez@empresa.com', roles: ['Administrador'], acceso: 'Activo', acceso_desde: '', estado_cuenta: 'Activa' },
-    { id: 2, nombre: 'J. Pérez', mail: 'jperez@empresa.com', roles: ['Vendedor'], acceso: 'Activo', acceso_desde: '', estado_cuenta: 'Activa' },
+    { id: 2, nombre: 'J. Pérez', mail: 'jperez@empresa.com', roles: ['Vendedor'], acceso: 'Activo', acceso_desde: '', estado_cuenta: 'Activa', telefono: '+54 387 4100200', whatsapp: '+54 9 387 4100200', cargo: 'Asesor Comercial' },
     { id: 3, nombre: 'L. Gómez', mail: 'lgomez@empresa.com', roles: ['Vendedor', 'Postventa'], acceso: 'Activo', acceso_desde: '', estado_cuenta: 'Activa' },
     { id: 4, nombre: 'O. Vera', mail: 'overa@externo.com', roles: ['Vendedor tercerizado'], acceso: 'Inactivo', acceso_desde: '2025-06-30', estado_cuenta: 'Activa' },
     { id: 5, nombre: 'R. Luna', mail: 'rluna@empresa.com', roles: ['Postventa'], acceso: 'Activo', acceso_desde: '', estado_cuenta: 'Restablecer' },
@@ -108,6 +108,10 @@ export const demoSeed = {
   configuracion: [
     { id: 1, ot_inicial: 440, ot_actual: 442, rem_inicial: 1280, rem_actual: 1284,
       sem_com_verde: 7, sem_com_amarillo: 15, sem_post_verde: 30, sem_post_amarillo: 60, sem_serv_verde: 7, sem_serv_amarillo: 15,
+      pres_tipos: ['Venta de drones DJI', 'Servicio técnico / reparación', 'Capacitación', 'Productos Ligier', 'Mixto'],
+      pres_condiciones: ['Contado', '50% adelanto / 50% contra entrega', '30 días', 'A convenir'],
+      pres_validez: ['15 días corridos desde la fecha de emisión', '30 días corridos desde la fecha de emisión', '7 días corridos desde la fecha de emisión', 'A convenir'],
+      pres_anio: null, pres_actual: 0,
       mail_host: 'smtp.gmail.com', mail_port: '587', mail_seg: 'TLS', mail_user: 'sistema@empresa.com', mail_from: 'DRAP - Sistema de Gestión',
       // alcance de datos para vendedores (no aplica a tercerizados, que siempre ven solo lo suyo)
       vendedores_ven_todo: false },
@@ -120,4 +124,7 @@ export const demoSeed = {
     { id: 3, rol: 'Técnico', modulos: ['dashboard', 'clientes', 'service'] },
     { id: 4, rol: 'Postventa', modulos: ['dashboard', 'clientes', 'ventas', 'postventa'] },
   ],
+  productos_catalogo: [{"id":1,"sku":"ALEMOR-80L","codigo":"","descripcion":"Mezclador de Caldo 80 Litros – Alemor","precio":2503,"marca":"Alemor","activo":true},{"id":2,"sku":"ALEMOR-140L","codigo":"","descripcion":"Mezclador de Caldo 140 Litros – Alemor","precio":2713,"marca":"Alemor","activo":true},{"id":3,"sku":"ALEMOR-240L","codigo":"","descripcion":"Mezclador de Caldo 240 Litros – Alemor","precio":3658,"marca":"Alemor","activo":true},{"id":4,"sku":"LIGIER-GRASS-BIO","codigo":"","descripcion":"Ligier Grass Bio – Penetrante / Estabilizante / Tensioactivo","precio":30,"marca":"Ligier","activo":true},{"id":5,"sku":"LIGIER-VERDE-BIO","codigo":"","descripcion":"Ligier Verde Bio – Tensioactivo / Adherente / Antievaporante","precio":34.9,"marca":"Ligier","activo":true},{"id":6,"sku":"LIGIER-PH-BIO","codigo":"","descripcion":"Ligier pH Bio – Regulador de pH / Secuestrante / Buffer / Humectante","precio":39.9,"marca":"Ligier","activo":true},{"id":7,"sku":"YC.ST.LL000229.01","codigo":"DJI-R1090","descripcion":"T20-PR00500030-035013-1223-N","precio":0.83,"marca":"DJI","activo":true},{"id":8,"sku":"YC.WJ.LL000379.02","codigo":"DJI-R834","descripcion":"T14-PP00500050-025005-0323-N","precio":0.83,"marca":"DJI","activo":true},{"id":9,"sku":"YC.WJ.LL000375.02","codigo":"DJI-R796","descripcion":"T14-PC00300030-025006-0323-N","precio":0.83,"marca":"DJI","activo":true},{"id":10,"sku":"YC.JG.MQ001336.03","codigo":"DJI-R936","descripcion":"Status LED Shielding Foam","precio":0.83,"marca":"DJI","activo":true},{"id":11,"sku":"YC.JG.MY000605.01","codigo":"DJI-R1262","descripcion":"Scroll Wheel Waterproof Ring","precio":0.83,"marca":"DJI","activo":true},{"id":12,"sku":"YC.JG.TT000113.02","codigo":"DJI-R954","descripcion":"Scroll Wheel Spring","precio":0.83,"marca":"DJI","activo":true},{"id":13,"sku":"YC.JG.ZS001930.03","codigo":"DJI-R1357","descripcion":"Scroll Wheel Bracket","precio":0.83,"marca":"DJI","activo":true},{"id":14,"sku":"YC.ST.LL000273.01","codigo":"DJI-R857","descripcion":"Screw T20-HC00800080-040020-0323-N","precio":0.83,"marca":"DJI","activo":true},{"id":15,"sku":"YC.WJ.LL000394.03","codigo":"DJI-R1341","descripcion":"Screw (T20-PP00400040-035014-3123-N)","precio":0.83,"marca":"DJI","activo":true},{"id":16,"sku":"YC.ST.LL000069.03","codigo":"DJI-R1297","descripcion":"Screw (T20-PC00300030-030006-3123-N)","precio":0.83,"marca":"DJI","activo":true},{"id":17,"sku":"YC.JG.MY000753.05","codigo":"DJI-R892","descripcion":"Pause Button Silicone Rubber Pad","precio":0.83,"marca":"DJI","activo":true},{"id":18,"sku":"YC.WJ.LL000288.01","codigo":"DJI-R1087","descripcion":"M16-PC00300030-030008-0323-Y","precio":0.83,"marca":"DJI","activo":true},{"id":19,"sku":"YC.WJ.C00159","codigo":"DJI-R1092","descripcion":"Inspire 1 Remote Controller Ball Bearing","precio":0.83,"marca":"DJI","activo":true},{"id":20,"sku":"YC.JG.MQ001101.01","codigo":"DJI-R1083","descripcion":"Fan Anti-Backflow Foam(46*3*2mm)","precio":0.83,"marca":"DJI","activo":true}],
+  presupuestos: [],
+  presupuesto_items: [],
 };

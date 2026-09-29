@@ -176,6 +176,22 @@ tbody tr.clickable:hover { background: var(--panel-2); }
 .tab.on { color: var(--brand-ink); border-bottom-color: var(--brand); }
 
 /* ---------- KPIs del dashboard ---------- */
+/* Presupuestador */
+.pres-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+.pres-datos { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; font-size: 13px; }
+.pres-items td { vertical-align: top; padding: 10px 12px; }
+.pres-items input { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 9px; font-size: 13px; color: var(--ink); font-family: inherit; }
+.pres-items input:disabled { background: var(--panel-2); color: var(--ink-2); }
+.pres-drop { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-hover); max-height: 320px; overflow-y: auto; margin-top: 4px; }
+.pres-drop-item { padding: 9px 12px; border-bottom: 1px solid var(--line-2); cursor: pointer; }
+.pres-drop-item:hover { background: var(--brand-bg); }
+.pres-totales { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 13.5px;
+  border-top: 2px solid var(--brand); padding-top: 10px; }
+.pres-totales b:last-child { font-size: 17px; }
+@media (max-width: 900px) { .pres-grid { grid-template-columns: 1fr; } }
+
 /* Encabezado compacto del dashboard: título y filtros en una sola línea. */
 .dash-top { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 10px; }
 .dash-top h1 { font-size: 22px; font-weight: 700; letter-spacing: -.01em; flex: 1 1 auto; }

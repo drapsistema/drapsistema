@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../shared/Icon.jsx';
 import { modoDemo } from '../lib/supabase';
 import { useAuth } from '../shared/Auth.jsx';
@@ -28,7 +28,11 @@ const TITULOS = {
   '/ventas': 'Ventas', '/postventa': 'Postventa', '/service': 'Service y reparación',
   '/equipos': 'Equipos activados',
   '/configuracion': 'Configuración',
+  '/presupuestos': 'Presupuestos', '/perfil': 'Mi perfil',
 };
+
+// Roles que emiten presupuestos: necesitan su teléfono y WhatsApp cargados.
+const ROLES_PRESUPUESTAN = ['Vendedor', 'Vendedor tercerizado', 'Técnico'];
 
 // Saludo según la hora del sistema.
 function saludo() {
@@ -44,8 +48,11 @@ export default function Layout() {
   const [tema, setTema] = useState(() => {
     try { return localStorage.getItem('drap-tema') || 'light'; } catch { return 'light'; }
   });
-  const { perfil, logout, modulos } = useAuth();
+  const { perfil, logout, modulos, roles } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+  const faltaContacto = perfil && (roles || []).some((r) => ROLES_PRESUPUESTAN.includes(r))
+    && (!perfil.telefono || !perfil.whatsapp);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', tema);
@@ -121,13 +128,22 @@ export default function Layout() {
             )}
           </button>
           {perfil && (
-            <div className="topbar-user">
+            <div className="topbar-user" onClick={() => navigate('/perfil')} style={{ cursor: 'pointer' }} title="Mi perfil">
               <span className="saludo">{saludo()}, <b>{perfil.nombre}</b></span>
               <div className="tb-avatar">{iniciales(perfil.nombre)}</div>
             </div>
           )}
         </header>
         <main className="content">
+          {faltaContacto && location.pathname !== '/perfil' && (
+            <div className="aviso warn" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="grow">
+                Te falta cargar tu {!perfil.telefono && !perfil.whatsapp ? 'teléfono y WhatsApp' : !perfil.telefono ? 'teléfono' : 'WhatsApp'}:
+                {' '}salen en los presupuestos que emitís.
+              </span>
+              <button className="btn ghost sm" onClick={() => navigate('/perfil')}>Completar ahora →</button>
+            </div>
+          )}
           <Outlet />
         </main>
       </div>
