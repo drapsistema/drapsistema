@@ -8,7 +8,6 @@ import { rolesDe, esAdministrador, ROLES, toggleRolExcluyente } from '../../shar
 import Icon from '../../shared/Icon.jsx';
 import Parametros from './Parametros.jsx';
 import Permisos from './Permisos.jsx';
-import Catalogo from './Catalogo.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 
 export default function Configuracion() {
@@ -20,11 +19,9 @@ export default function Configuracion() {
         <button className={'tab' + (tab === 'usuarios' ? ' on' : '')} onClick={() => setTab('usuarios')}>Usuarios y roles</button>
         <button className={'tab' + (tab === 'permisos' ? ' on' : '')} onClick={() => setTab('permisos')}>Permisos</button>
         <button className={'tab' + (tab === 'parametros' ? ' on' : '')} onClick={() => setTab('parametros')}>Parámetros</button>
-        <button className={'tab' + (tab === 'catalogo' ? ' on' : '')} onClick={() => setTab('catalogo')}>Catálogo</button>
       </div>
       <div style={{ marginTop: 16 }}>
-        {tab === 'usuarios' ? <Usuarios /> : tab === 'permisos' ? <Permisos />
-          : tab === 'catalogo' ? <Catalogo /> : <Parametros />}
+        {tab === 'usuarios' ? <Usuarios /> : tab === 'permisos' ? <Permisos /> : <Parametros />}
       </div>
     </div>
   );

@@ -219,7 +219,7 @@ export default function PresupuestoForm() {
             </div>
           </div>
 
-          <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card con-desplegable" style={{ marginBottom: 16, position: 'relative', zIndex: 2 }}>
             <div className="card-h">Ítems</div>
             <div className="card-pad">
               <BuscadorCatalogo onElegir={agregarProducto} />

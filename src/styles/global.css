@@ -176,6 +176,20 @@ tbody tr.clickable:hover { background: var(--panel-2); }
 .tab.on { color: var(--brand-ink); border-bottom-color: var(--brand); }
 
 /* ---------- KPIs del dashboard ---------- */
+/* Catálogo: celdas editables en la tabla (solo admin). */
+.celda-editable { cursor: text; border-radius: 6px; padding: 3px 6px; margin: -3px -6px; display: inline-block; min-width: 40px; }
+.celda-editable:hover { background: var(--brand-bg); outline: 1px dashed var(--brand); }
+.celda-input, .celda-select {
+  background: var(--panel); border: 1px solid var(--brand); border-radius: 6px; padding: 5px 8px;
+  font-size: 13px; color: var(--ink); font-family: inherit; outline: none;
+}
+.celda-select { border-color: var(--line); }
+.tabla-catalogo td { padding-top: 9px; padding-bottom: 9px; }
+
+/* Tarjeta que contiene una lista desplegable: no recortar lo que sobresale. */
+.card.con-desplegable { overflow: visible; }
+.card.con-desplegable > .card-h { border-radius: var(--radius) var(--radius) 0 0; }
+
 /* Presupuestador */
 .pres-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
 .pres-datos { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; font-size: 13px; }

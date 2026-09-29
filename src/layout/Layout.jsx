@@ -12,6 +12,7 @@ const NAV = [
     { to: '/clientes', label: 'Clientes', icon: 'clientes', mod: 'clientes' },
     { to: '/comercial', label: 'CRM comercial', icon: 'comercial', mod: 'comercial' },
     { to: '/ventas', label: 'Ventas', icon: 'ventas', mod: 'ventas' },
+    { to: '/catalogo', label: 'Catálogo', icon: 'catalogo', mod: 'ventas' },
   ]},
   { grupo: 'Operaciones', items: [
     { to: '/postventa', label: 'Postventa', icon: 'postventa', mod: 'postventa' },
@@ -28,7 +29,7 @@ const TITULOS = {
   '/ventas': 'Ventas', '/postventa': 'Postventa', '/service': 'Service y reparación',
   '/equipos': 'Equipos activados',
   '/configuracion': 'Configuración',
-  '/presupuestos': 'Presupuestos', '/perfil': 'Mi perfil',
+  '/presupuestos': 'Presupuestos', '/perfil': 'Mi perfil', '/catalogo': 'Catálogo',
 };
 
 // Roles que emiten presupuestos: necesitan su teléfono y WhatsApp cargados.

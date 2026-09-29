@@ -27,6 +27,7 @@ import UsuarioForm from './modules/configuracion/UsuarioForm.jsx';
 import PresupuestoForm from './modules/presupuestos/PresupuestoForm.jsx';
 import PresupuestoVer from './modules/presupuestos/PresupuestoVer.jsx';
 import MiPerfil from './modules/perfil/MiPerfil.jsx';
+import Catalogo from './modules/catalogo/Catalogo.jsx';
 
 export default function App() {
   const { autenticado, cargando } = useAuth();
@@ -60,6 +61,7 @@ export default function App() {
 
         <Route path="ventas" element={<ProtegerModulo modulo="ventas"><Ventas /></ProtegerModulo>} />
         <Route path="ventas/:id" element={<ProtegerModulo modulo="ventas"><VentaDetalle /></ProtegerModulo>} />
+        <Route path="catalogo" element={<ProtegerModulo modulo="ventas"><Catalogo /></ProtegerModulo>} />
 
         <Route path="postventa" element={<ProtegerModulo modulo="postventa"><Postventa /></ProtegerModulo>} />
         <Route path="postventa/nueva" element={<ProtegerModulo modulo="postventa"><PostventaForm /></ProtegerModulo>} />
