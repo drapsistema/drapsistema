@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { listar, crear } from '../../lib/db';
-import { PageHeader, BackButton, nombreCliente, hoyISO } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, nombreCliente, hoyISO, nroPostventa } from '../../shared/ui.jsx';
 import { comentarSistema } from '../../shared/Comentarios.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
@@ -50,8 +50,12 @@ export default function PostventaForm() {
     setGuardando(true);
     try {
       const clienteId = Number(form.cliente_id);
-      const base = {
+      const pv = await crear('postventas', {
         venta_id: null, cliente_id: clienteId, equipo: form.equipo.trim() || null,
+        observaciones: form.observaciones.trim(),
+      });
+      const base = {
+        postventa_id: pv.id, venta_id: null, cliente_id: clienteId, equipo: pv.equipo,
         estado: 'Pendiente', fecha_real: null, observaciones: form.observaciones.trim(), hectareas: null,
         visita: false, visita_estado: '', visita_agenda: null, visita_real: null, responsable_id: null,
       };
@@ -63,11 +67,11 @@ export default function PostventaForm() {
           objetivo: form.fecha,
         }];
       for (const t of tareas) await crear('tareas_postventa', t);
-      await comentarSistema('post-cli', clienteId,
-        `Postventa cargada sin venta: ${esSeguimiento ? 'seguimiento completo (3 tareas)' : tareas[0].hito}${base.equipo ? ` · equipo: ${base.equipo}` : ''}.${base.observaciones ? ` Observaciones: ${base.observaciones}` : ''}`,
+      await comentarSistema('pv', pv.id,
+        `Postventa ${nroPostventa(pv)} cargada sin venta: ${esSeguimiento ? 'seguimiento completo (3 tareas)' : tareas[0].hito}${base.equipo ? ` · equipo: ${base.equipo}` : ''}.${base.observaciones ? ` Observaciones: ${base.observaciones}` : ''}`,
         usuarioActualId);
-      toast(esSeguimiento ? 'Postventa creada · 3 tareas de seguimiento' : 'Tarea de postventa creada');
-      navigate(`/postventa/cliente/${clienteId}`);
+      toast(`Postventa ${nroPostventa(pv)} creada`);
+      navigate(`/postventa/${pv.id}`);
     } catch (err) {
       console.error('Error al crear postventa:', err);
       toast('No se pudo crear la postventa', 'err');
@@ -79,7 +83,7 @@ export default function PostventaForm() {
 
   return (
     <div>
-      <PageHeader titulo="Nueva postventa" sub="Para equipos que el cliente compró en otro lado y no tienen venta en el sistema">
+      <PageHeader titulo="Nueva postventa" sub="Para equipos que el cliente compró en otro lado: se identifica por su número de postventa (PV-…), sin venta">
         <BackButton to="/postventa" />
       </PageHeader>
 

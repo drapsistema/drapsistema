@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, crear, actualizar, generarPostventa } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, AvisoClienteIncompleto, nroVenta } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, hoyISO, AvisoClienteIncompleto, nroVenta, nroPostventa } from '../../shared/ui.jsx';
 import Comentarios, { comentarSistema } from '../../shared/Comentarios.jsx';
 import ModalCampos from '../../shared/ModalCampos.jsx';
 import { useToast } from '../../shared/Toast.jsx';
@@ -33,6 +33,7 @@ export default function VentaDetalle() {
   const [erroresCobro, setErroresCobro] = useState({});
   const [guardandoCobro, setGuardandoCobro] = useState(false);
   const [numeroInput, setNumeroInput] = useState(null); // null = no se está editando
+  const [postventa, setPostventa] = useState(null);
   const { esAdmin, usuarioActualId, roles } = useAuth();
 
   useEffect(() => { cargar(); }, [id]);
@@ -43,6 +44,8 @@ export default function VentaDetalle() {
     if (v) {
       setCliente(await obtener('clientes', v.cliente_id));
       setProductos(await listar('productos', { venta_id: Number(id) }));
+      // Solo admin y Postventa pueden ver postventas; para el resto queda vacío.
+      listar('postventas', { venta_id: Number(id) }).then((ps) => setPostventa(ps[0] || null)).catch(() => setPostventa(null));
       setForm({ direccion_entrega: v.direccion_entrega || '', fecha_entrega: v.fecha_entrega || '' });
       setComisionInput(v.comision ? String(v.comision) : '');
       setCobro(cobroDe(v));
@@ -204,7 +207,7 @@ export default function VentaDetalle() {
     }
     await actualizar('ventas', id, { estado: 'Cancelada', motivo_cancel: motivoCancel, fecha_cancel: hoyISO() });
     if (venta.oportunidad_id) {
-      await actualizar('oportunidades', venta.oportunidad_id, { resultado: 'Venta cancelada', etapa: 'Cierre' });
+      await actualizar('oportunidades', venta.oportunidad_id, { resultado: 'Venta cancelada', etapa: 'Cierre', fecha_cierre: hoyISO() });
     }
     await comentarSistema('venta', id, `Venta cancelada. Motivo: ${motivoCancel}.`, usuarioActualId);
     toast('Venta cancelada');
@@ -226,7 +229,9 @@ export default function VentaDetalle() {
       {entregada && !cancelada && (
         <div className="aviso ok">
           Entregada el <b style={{ margin: '0 4px' }}>{fmtFecha(venta.fecha_entrega)}</b>. Postventa generada.
-          <a onClick={() => navigate('/postventa')} style={{ marginLeft: 8 }}>Ver postventa →</a>
+          <a onClick={() => navigate(postventa ? `/postventa/${postventa.id}` : '/postventa')} style={{ marginLeft: 8 }}>
+            Ver postventa{postventa ? ` ${nroPostventa(postventa)}` : ''} →
+          </a>
         </div>
       )}
       {bloqueada && !esAdmin && (

@@ -54,6 +54,7 @@ export default function TrabajoDetalle() {
     || estado === 'En reparación' || estado === 'Esperando repuestos';
   const puedeAgregarRep = estado === 'En reparación' || estado === 'Esperando repuestos';
   const puedeInforme = ['En reparación', 'Esperando repuestos', 'Finalizada', 'Entregada'].includes(estado);
+  const tareasPendientes = tareas.filter((t) => t.estado !== 'Hecha');
 
   async function log(txt) { await comentarSistema('trabajo', id, txt, usuarioActualId); }
 
@@ -89,6 +90,9 @@ export default function TrabajoDetalle() {
     toast('De vuelta en reparación'); cargar();
   }
   async function confirmarFinalizar() {
+    if (tareasPendientes.length > 0) {
+      toast('Todas las tareas tienen que estar hechas para finalizar', 'err'); setFinalizando(false); return;
+    }
     if (confirmNro.trim() !== trabajo.nro) {
       toast(`Escribí el número exacto (${trabajo.nro}) para confirmar`, 'err'); return;
     }
@@ -194,7 +198,15 @@ export default function TrabajoDetalle() {
                     </div>
                   </div>
                   <div className="hint" style={{ marginBottom: 10 }}>Al cargar la fecha, el ticket pasa a “Esperando repuestos”.</div>
-                  <button className="btn full" onClick={() => setFinalizando(true)}><Icon name="check" size={16} /> Finalizar (genera informe)</button>
+                  {tareasPendientes.length > 0 && (
+                    <div className="aviso warn" style={{ marginBottom: 10 }}>
+                      Para finalizar, todas las tareas tienen que estar <b style={{ margin: '0 3px' }}>Hechas</b>.
+                      Falta{tareasPendientes.length === 1 ? '' : 'n'} {tareasPendientes.length}: {tareasPendientes.map((t) => t.descripcion).join(', ')}.
+                    </div>
+                  )}
+                  <button className="btn full" onClick={() => setFinalizando(true)} disabled={tareasPendientes.length > 0}>
+                    <Icon name="check" size={16} /> Finalizar (genera informe)
+                  </button>
                 </>
               )}
 
@@ -344,6 +356,13 @@ function TareasCard({ trabajoId, tareas, tecnicos, cerrado, puedeAgregar, recarg
     } catch (e) { console.error(e); toast('No se pudo guardar la tarea', 'err'); }
   }
   async function borrar(t) { await eliminar('tareas', t.id); toast('Tarea eliminada'); recargar(); }
+  async function marcarHecha(t) {
+    try {
+      await actualizar('tareas', t.id, { estado: 'Hecha' });
+      await comentarSistema('trabajo', trabajoId, `Tarea hecha: "${t.descripcion}".`, usuarioActualId);
+      toast('Tarea marcada como hecha'); recargar();
+    } catch (e) { console.error(e); toast('No se pudo actualizar la tarea', 'err'); }
+  }
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -363,6 +382,9 @@ function TareasCard({ trabajoId, tareas, tecnicos, cerrado, puedeAgregar, recarg
                   <td>{t.horas ? t.horas + ' h' : '—'}</td>
                   <td><span className={'badge ' + (t.estado === 'Hecha' ? 'g' : 'a')}>{t.estado}</span></td>
                   {!cerrado && <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    {t.estado !== 'Hecha' && (
+                      <button className="ibtn ok" onClick={() => marcarHecha(t)} title="Marcar como hecha"><Icon name="check" size={14} /></button>
+                    )}
                     <button className="ibtn" onClick={() => setModal(t)}><Icon name="edit" size={14} /></button>
                     <button className="ibtn del" onClick={() => borrar(t)}><Icon name="del" size={14} /></button>
                   </td>}

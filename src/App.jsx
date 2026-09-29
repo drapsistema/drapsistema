@@ -60,7 +60,6 @@ export default function App() {
 
         <Route path="postventa" element={<ProtegerModulo modulo="postventa"><Postventa /></ProtegerModulo>} />
         <Route path="postventa/nueva" element={<ProtegerModulo modulo="postventa"><PostventaForm /></ProtegerModulo>} />
-        <Route path="postventa/cliente/:clienteId" element={<ProtegerModulo modulo="postventa"><PostventaDetalle /></ProtegerModulo>} />
         <Route path="postventa/:id" element={<ProtegerModulo modulo="postventa"><PostventaDetalle /></ProtegerModulo>} />
 
         <Route path="service" element={<ProtegerModulo modulo="service"><Service /></ProtegerModulo>} />

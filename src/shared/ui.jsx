@@ -41,6 +41,12 @@ export function nroVenta(v) {
   return v.numero || `VT-${String(v.id).padStart(4, '0')}`;
 }
 
+// Número visible de una postventa.
+export function nroPostventa(p) {
+  if (!p) return '';
+  return `PV-${String(p.id).padStart(4, '0')}`;
+}
+
 // Datos opcionales del cliente que conviene completar. Sin CUIT no se
 // puede descartar que el cliente esté duplicado en la base.
 export function datosFaltantesCliente(c) {

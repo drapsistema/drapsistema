@@ -37,7 +37,16 @@ export const demoSeed = {
     { id: 1, cliente_id: 1, etapa: 'Seguimiento', fecha_contacto: '2025-07-02', relevamiento: '2 drones de pulverización, cobertura 400 ha', resultado: null, motivo: '', motivo_detalle: '', vendedor_id: 2 },
     { id: 2, cliente_id: 4, etapa: 'Cotización', fecha_contacto: '2025-07-08', relevamiento: '1 dron + capacitación', resultado: null, motivo: '', motivo_detalle: '', vendedor_id: 3 },
     { id: 3, cliente_id: 2, etapa: 'Contacto inicial', fecha_contacto: '2025-07-10', relevamiento: '3 drones Agras T40', resultado: null, motivo: '', motivo_detalle: '', vendedor_id: 3 },
-    { id: 4, cliente_id: 3, etapa: 'Cierre', fecha_contacto: '2025-06-01', relevamiento: '1 dron DJI T25', resultado: 'Ganada', motivo: '', motivo_detalle: '', vendedor_id: 2 },
+    { id: 4, cliente_id: 3, etapa: 'Cierre', fecha_contacto: '2025-06-01', relevamiento: '1 dron DJI T25', resultado: 'Ganada', motivo: '', motivo_detalle: '', vendedor_id: 2, fecha_cierre: '2025-06-20' },
+    ...[
+      ['Ganada', '2025-05-02'], ['Perdida', '2025-05-10'], ['Perdida', '2025-05-21'], ['Ganada', '2025-06-03'],
+      ['Perdida', '2025-06-11'], ['Ganada', '2025-06-28'], ['Perdida', '2025-07-04'], ['Perdida', '2025-07-15'],
+      ['Ganada', '2025-04-12'], ['Perdida', '2025-04-02'], ['Perdida', '2025-03-20'], ['Ganada', '2025-03-05'],
+    ].map(([resultado, fecha_cierre], i) => ({
+      id: 5 + i, cliente_id: (i % 4) + 1, etapa: 'Cierre', fecha_contacto: '2025-02-15',
+      relevamiento: `Consulta por dron de pulverización · lote ${i + 1}`, resultado,
+      motivo: resultado === 'Perdida' ? 'Precio' : '', motivo_detalle: '', vendedor_id: i % 2 ? 3 : 2, fecha_cierre,
+    })),
   ],
   cotizaciones: [
     { id: 1, oportunidad_id: 1, version: 1, pdf: 'cotizacion_agrosur_v1.pdf', fecha_envio: '2025-07-05' },
@@ -62,13 +71,17 @@ export const demoSeed = {
     { id: 2, venta_id: 2, modelo: 'DJI Agras T40', nro_serie: 'T40-77120', activado: true, alta_dji: true, garantia: '2026-03-18' },
     { id: 3, venta_id: 2, modelo: 'DJI Agras T40', nro_serie: 'T40-77121', activado: true, alta_dji: false, garantia: '2026-03-18' },
   ],
+  postventas: [
+    { id: 1, venta_id: 1, cliente_id: 3, equipo: null, creado_en: '2025-07-01' },
+    { id: 2, venta_id: 2, cliente_id: 1, equipo: null, creado_en: '2025-03-18' },
+  ],
   tareas_postventa: [
-    { id: 1, venta_id: 1, hito: '1 semana', objetivo: '2025-07-08', estado: 'Realizada', fecha_real: '2025-07-09', observaciones: 'Cliente conforme.', hectareas: 120, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
-    { id: 2, venta_id: 1, hito: '1 mes', objetivo: '2025-08-01', estado: 'Pendiente', fecha_real: '', observaciones: '', hectareas: null, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
-    { id: 3, venta_id: 1, hito: '2 meses', objetivo: '2025-09-01', estado: 'Pendiente', fecha_real: '', observaciones: '', hectareas: null, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
-    { id: 4, venta_id: 2, hito: '1 semana', objetivo: '2025-03-25', estado: 'Realizada', fecha_real: '2025-03-26', observaciones: 'Todo ok.', hectareas: 80, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
-    { id: 5, venta_id: 2, hito: '1 mes', objetivo: '2025-04-18', estado: 'Realizada', fecha_real: '2025-05-02', observaciones: 'Coordinó visita técnica.', hectareas: 340, visita: true, visita_estado: 'Solicitada', visita_agenda: '', visita_real: '', responsable_id: 5 },
-    { id: 6, venta_id: 2, hito: '2 meses', objetivo: '2025-05-18', estado: 'Pendiente', fecha_real: '', observaciones: '', hectareas: null, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
+    { id: 1, venta_id: 1, postventa_id: 1, hito: '1 semana', objetivo: '2025-07-08', estado: 'Realizada', fecha_real: '2025-07-09', observaciones: 'Cliente conforme.', hectareas: 120, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
+    { id: 2, venta_id: 1, postventa_id: 1, hito: '1 mes', objetivo: '2025-08-01', estado: 'Pendiente', fecha_real: '', observaciones: '', hectareas: null, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
+    { id: 3, venta_id: 1, postventa_id: 1, hito: '2 meses', objetivo: '2025-09-01', estado: 'Pendiente', fecha_real: '', observaciones: '', hectareas: null, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
+    { id: 4, venta_id: 2, postventa_id: 2, hito: '1 semana', objetivo: '2025-03-25', estado: 'Realizada', fecha_real: '2025-03-26', observaciones: 'Todo ok.', hectareas: 80, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
+    { id: 5, venta_id: 2, postventa_id: 2, hito: '1 mes', objetivo: '2025-04-18', estado: 'Realizada', fecha_real: '2025-05-02', observaciones: 'Coordinó visita técnica.', hectareas: 340, visita: true, visita_estado: 'Solicitada', visita_agenda: '', visita_real: '', responsable_id: 5 },
+    { id: 6, venta_id: 2, postventa_id: 2, hito: '2 meses', objetivo: '2025-05-18', estado: 'Pendiente', fecha_real: '', observaciones: '', hectareas: null, visita: false, visita_estado: '', visita_agenda: '', visita_real: '', responsable_id: 5 },
   ],
   trabajos: [
     { id: 1, cliente_id: 1, tipo: 'Service', nro: 'OT-0442', ingreso: '2025-07-05', egreso: '',

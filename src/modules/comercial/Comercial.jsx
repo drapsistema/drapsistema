@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { listar } from '../../lib/db';
-import { PageHeader, nombreCliente } from '../../shared/ui.jsx';
+import { listar, obtener } from '../../lib/db';
+import { PageHeader, nombreCliente, diasDesde } from '../../shared/ui.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import Board from '../../shared/Board.jsx';
 import { ETAPAS, camposFaltantes, avanzarEtapa } from './etapas.js';
+import ListaOportunidades from './ListaOportunidades.jsx';
+import { esGanada, claseResultado, BadgeResultado } from './resultado.jsx';
 
 const ESTADOS = ETAPAS.map((e) => ({ id: e, label: e }));
+const MAX_CIERRE_KANBAN = 10;
+const GRUPOS_INICIALES = { 'Contacto inicial': true, 'Cotización': true, 'Seguimiento': true, 'Cierre': false };
 
 // Agrupa una lista por una clave (para armar el contexto por oportunidad).
 function agrupar(lista, clave) {
@@ -18,18 +22,29 @@ function agrupar(lista, clave) {
   return m;
 }
 
+// Cerradas más recientes primero (por fecha de cierre; sin fecha, al final).
+const porCierre = (a, b) => (b.fecha_cierre || '').localeCompare(a.fecha_cierre || '') || b.id - a.id;
+
 export default function Comercial() {
   const [ops, setOps] = useState([]);
   const [clientes, setClientes] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [cfg, setCfg] = useState(null);
   const [params] = useSearchParams();
   const filtroEtapa = params.get('etapa'); // viene del dashboard (KPI clickeable)
   const [q, setQ] = useState('');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
+  const [vista, setVista] = useState('kanban');
+  const [grupos, setGrupos] = useState(GRUPOS_INICIALES);
   const navigate = useNavigate();
   const toast = useToast();
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => {
+    cargar();
+    listar('usuarios').then(setUsuarios).catch(() => setUsuarios([]));
+    obtener('configuracion', 1).then(setCfg).catch(() => {});
+  }, []);
 
   async function cargar() {
     // Cargamos también cotizaciones y seguimientos para saber qué datos
@@ -49,7 +64,30 @@ export default function Comercial() {
     setClientes(clsR);
   }
 
-  let items = ops;
+  const nombrePorId = (id) => {
+    const c = clientes.find((x) => x.id === id);
+    return c ? nombreCliente(c) : `Cliente #${id}`;
+  };
+  const nombreVendedor = (id) => usuarios.find((u) => u.id === id)?.nombre || '— sin asignar —';
+
+  // Datos calculados para la lista: último contacto (el seguimiento más
+  // reciente o el primer contacto) y semáforo por días sin contacto.
+  const verde = cfg?.sem_com_verde ?? 7;
+  const amarillo = cfg?.sem_com_amarillo ?? 15;
+  const conDatos = ops.map((o) => {
+    const ultimo = [o.fecha_contacto, ...o._ctx.seguimientos.map((s) => s.fecha)].filter(Boolean).sort().pop() || null;
+    const dias = ultimo ? Math.max(0, diasDesde(ultimo)) : 0;
+    return {
+      ...o,
+      _cliente: nombrePorId(o.cliente_id),
+      _vendedor: nombreVendedor(o.vendedor_id),
+      _ultimo: ultimo,
+      _dias: dias,
+      _sem: dias <= verde ? 'g' : dias <= amarillo ? 'a' : 'r',
+    };
+  });
+
+  let items = conDatos;
   if (filtroEtapa) items = items.filter((i) => i.estado === filtroEtapa);
 
   // Qué campos faltan para llevar esta oportunidad a `hacia` (acumulativo).
@@ -74,16 +112,40 @@ export default function Comercial() {
     }
   }
 
-  const nombrePorId = (id) => {
-    const c = clientes.find((x) => x.id === id);
-    return c ? nombreCliente(c) : `Cliente #${id}`;
-  };
-
   // Buscador + filtro temporal (por fecha de primer contacto).
   const term = q.trim().toLowerCase();
-  if (term) items = items.filter((i) => nombrePorId(i.cliente_id).toLowerCase().includes(term) || (i.relevamiento || '').toLowerCase().includes(term));
+  if (term) {
+    items = items.filter((i) => i._cliente.toLowerCase().includes(term)
+      || (i.relevamiento || '').toLowerCase().includes(term)
+      || i._vendedor.toLowerCase().includes(term));
+  }
   if (desde) items = items.filter((i) => (i.fecha_contacto || '') >= desde);
   if (hasta) items = items.filter((i) => (i.fecha_contacto || '') <= hasta);
+
+  // Columna Cierre del Kanban: solo las 10 cerradas más recientes, en dos
+  // secciones. El resto sigue disponible en la vista Lista.
+  function columnaCierre(estado, lista, tarjeta) {
+    if (estado.id !== 'Cierre') return null;
+    const recientes = [...lista].sort(porCierre).slice(0, MAX_CIERRE_KANBAN);
+    const ganadas = recientes.filter(esGanada);
+    const perdidas = recientes.filter((o) => !esGanada(o));
+    const restantes = lista.length - recientes.length;
+    return (
+      <>
+        <div className="kcol-sec"><span>Ganadas</span><span>{ganadas.length}</span></div>
+        {ganadas.map(tarjeta)}
+        <div className="kcol-sec" style={{ marginTop: 6 }}><span>Perdidas</span><span>{perdidas.length}</span></div>
+        {perdidas.map(tarjeta)}
+        {restantes > 0 && (
+          <div className="kcol-mas">
+            <a onClick={() => { setGrupos((g) => ({ ...g, Cierre: true })); setVista('lista'); }}>
+              Ver las {restantes} restantes →
+            </a>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <div>
@@ -102,7 +164,7 @@ export default function Comercial() {
       <div className="card card-pad" style={{ marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div className="field" style={{ margin: 0, flex: '1 1 240px' }}>
           <label>Buscar</label>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cliente o relevamiento" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cliente, relevamiento o vendedor" />
         </div>
         <div className="field" style={{ margin: 0 }}>
           <label>Contacto desde</label>
@@ -118,12 +180,24 @@ export default function Comercial() {
       <Board
         estados={ESTADOS}
         items={items}
+        vista={vista}
+        onVista={setVista}
         camposTransicion={camposTransicion}
         onMover={mover}
         onCardClick={(o) => navigate(`/comercial/${o.id}`)}
+        cardClass={claseResultado}
+        renderColumna={columnaCierre}
+        renderLista={(lista) => (
+          <ListaOportunidades items={lista} abiertos={grupos}
+            onToggle={(etapa) => setGrupos((g) => ({ ...g, [etapa]: !g[etapa] }))}
+            onAbrir={(o) => navigate(`/comercial/${o.id}`)} />
+        )}
         render={(o) => (
           <div>
-            <div className="kcard-t">{nombrePorId(o.cliente_id)}</div>
+            <div className="kcard-t" style={{ display: 'flex', gap: 6, alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <span>{o._cliente}</span>
+              {o.resultado && <BadgeResultado o={o} />}
+            </div>
             <div className="kcard-s">{o.relevamiento}</div>
           </div>
         )}

@@ -33,10 +33,19 @@ import './board.css';
 //        directa.
 //   onMover: (item, nuevoEstado, valores) => void
 //   onCardClick: (item) => void
+// Opcionales:
+//   vista / onVista: controlar desde afuera la vista ('kanban' | 'lista').
+//   renderLista: (items) => JSX que reemplaza la vista de lista genérica.
+//   renderColumna: (estado, items, tarjeta) => JSX | null. Cuerpo propio de
+//        una columna; `tarjeta(item)` dibuja una tarjeta arrastrable.
+//   cardClass: (item) => string con clases extra para la tarjeta.
 // ============================================================
 
-export default function Board({ estados, items, render, camposTransicion, onMover, onCardClick, columnas }) {
-  const [vista, setVista] = useState('kanban'); // 'kanban' | 'lista'
+export default function Board({ estados, items, render, camposTransicion, onMover, onCardClick, columnas,
+  vista: vistaExterna, onVista, renderLista, renderColumna, cardClass }) {
+  const [vistaInterna, setVistaInterna] = useState('kanban');
+  const vista = vistaExterna || vistaInterna;
+  const setVista = onVista || setVistaInterna;
 
   return (
     <div>
@@ -50,12 +59,14 @@ export default function Board({ estados, items, render, camposTransicion, onMove
       <BoardDnd
         vista={vista} estados={estados} items={items} columnas={columnas}
         render={render} camposTransicion={camposTransicion} onMover={onMover} onCardClick={onCardClick}
+        renderLista={renderLista} renderColumna={renderColumna} cardClass={cardClass}
       />
     </div>
   );
 }
 
-function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, onCardClick, columnas }) {
+function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, onCardClick, columnas,
+  renderLista, renderColumna, cardClass }) {
   const [activo, setActivo] = useState(null);          // item que se arrastra
   const [transicion, setTransicion] = useState(null);  // { item, hacia, campos }
 
@@ -97,10 +108,11 @@ function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, on
           style={columnas ? { gridTemplateColumns: `repeat(${columnas}, minmax(0, 1fr))` } : undefined}>
           {estados.map((est) => (
             <Columna key={est.id} estado={est}
-              items={items.filter((i) => i.estado === est.id)} render={render} onCardClick={onCardClick} />
+              items={items.filter((i) => i.estado === est.id)} render={render} onCardClick={onCardClick}
+              renderColumna={renderColumna} cardClass={cardClass} />
           ))}
         </div>
-      ) : (
+      ) : renderLista ? renderLista(items) : (
         <ListaView estados={estados} items={items} render={render} onCardClick={onCardClick} />
       )}
 
@@ -122,13 +134,15 @@ function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, on
   );
 }
 
-function Columna({ estado, items, render, onCardClick }) {
+function Columna({ estado, items, render, onCardClick, renderColumna, cardClass }) {
   const { setNodeRef, isOver } = useDroppable({ id: estado.id });
+  const tarjeta = (it) => <Tarjeta key={it.id} item={it} render={render} onCardClick={onCardClick} cardClass={cardClass} />;
+  const propio = renderColumna ? renderColumna(estado, items, tarjeta) : null;
   return (
     <div ref={setNodeRef} className={'kcol' + (isOver ? ' drop-hover' : '')}>
       <div className="kcol-h"><span>{estado.label}</span><span>{items.length}</span></div>
       <div className="kcol-body">
-        {items.map((it) => <Tarjeta key={it.id} item={it} render={render} onCardClick={onCardClick} />)}
+        {propio || items.map(tarjeta)}
       </div>
     </div>
   );
@@ -137,7 +151,7 @@ function Columna({ estado, items, render, onCardClick }) {
 // La tarjeta distingue click de arrastre: guarda la posición del puntero
 // al apretar (pointerdown, que no interfiere con dnd-kit) y, si al soltar
 // casi no se movió, lo trata como click y abre el detalle.
-function Tarjeta({ item, render, onCardClick }) {
+function Tarjeta({ item, render, onCardClick, cardClass }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: String(item.id) });
   const start = useRef({ x: 0, y: 0 });
 
@@ -151,7 +165,7 @@ function Tarjeta({ item, render, onCardClick }) {
         const movido = Math.abs(e.clientX - start.current.x) + Math.abs(e.clientY - start.current.y);
         if (movido < 8 && onCardClick) onCardClick(item);
       }}
-      className={'kcard' + (isDragging ? ' dragging' : '')}
+      className={'kcard' + (isDragging ? ' dragging' : '') + (cardClass ? ' ' + (cardClass(item) || '') : '')}
     >
       {render(item)}
     </div>

@@ -103,6 +103,7 @@ export const REQUISITOS = {
     ],
     camposOp: (valores) => ({
       resultado: valores.resultado,
+      fecha_cierre: hoyISO(),
       motivo: valores.resultado === 'Perdida' ? (valores.motivo || '') : '',
       motivo_detalle: (valores.resultado === 'Perdida' && valores.motivo === 'Otro')
         ? (valores.motivo_detalle || '') : '',
@@ -239,7 +240,7 @@ export async function reabrirOportunidad(op) {
   await actualizar('oportunidades', op.id, {
     intento: intentoCerrado + 1,
     etapa: 'Contacto inicial',
-    resultado: '', motivo: '', motivo_detalle: '',
+    resultado: '', motivo: '', motivo_detalle: '', fecha_cierre: null,
   });
   await comentarSistema('op', op.id,
     `Recontacto: se cierra el intento ${intentoCerrado} y arranca uno nuevo desde Contacto inicial. Los registros anteriores quedan como historial.`);

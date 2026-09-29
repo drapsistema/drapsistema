@@ -145,7 +145,7 @@ export async function unificarClientes(origenId, destinoId) {
     const o = demoStore.clientes.find((c) => c.id === Number(origenId));
     const d = demoStore.clientes.find((c) => c.id === Number(destinoId));
     const movidos = {};
-    ['contactos', 'oportunidades', 'ventas', 'trabajos', 'tareas_postventa'].forEach((t) => {
+    ['contactos', 'oportunidades', 'ventas', 'trabajos', 'tareas_postventa', 'postventas'].forEach((t) => {
       const filas = (demoStore[t] || []).filter((f) => f.cliente_id === o.id);
       filas.forEach((f) => { f.cliente_id = d.id; });
       movidos[t] = filas.length;
@@ -174,11 +174,14 @@ export async function generarPostventa(ventaId) {
     const v = (demoStore.ventas || []).find((x) => x.id === vid);
     const yaHay = (demoStore.tareas_postventa || []).some((t) => t.venta_id === vid);
     if (!v || !v.fecha_entrega || yaHay) return 0;
+    const pv = (demoStore.postventas || []).find((p) => p.venta_id === vid)
+      || await crear('postventas', { venta_id: vid, cliente_id: v.cliente_id, equipo: null });
     const base = new Date(v.fecha_entrega);
     for (const [hito, d] of [['1 semana', 7], ['1 mes', 30], ['2 meses', 60]]) {
       const obj = new Date(base); obj.setDate(obj.getDate() + d);
       await crear('tareas_postventa', {
-        venta_id: vid, hito, objetivo: obj.toISOString().slice(0, 10), estado: 'Pendiente',
+        venta_id: vid, postventa_id: pv.id, cliente_id: v.cliente_id,
+        hito, objetivo: obj.toISOString().slice(0, 10), estado: 'Pendiente',
         fecha_real: null, observaciones: '', hectareas: null, visita: false,
         visita_estado: '', visita_agenda: null, visita_real: null, responsable_id: null,
       });

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, crear, actualizar } from '../../lib/db';
-import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, AvisoClienteIncompleto, nroVenta } from '../../shared/ui.jsx';
+import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, AvisoClienteIncompleto, nroVenta, nroPostventa } from '../../shared/ui.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
@@ -141,12 +141,12 @@ export default function ClienteFicha() {
             <Empty>Este cliente todavía no tiene tareas de postventa.</Empty>
           ) : (
             <table>
-              <thead><tr><th>Venta</th><th>Hito</th><th>Objetivo</th><th>Estado</th></tr></thead>
+              <thead><tr><th>Postventa</th><th>Venta</th><th>Hito</th><th>Objetivo</th><th>Estado</th></tr></thead>
               <tbody>
                 {tareas.map((t) => (
-                  <tr key={t.id} className="clickable"
-                    onClick={() => navigate(t.venta_id ? `/postventa/${t.venta_id}` : `/postventa/cliente/${id}`)}>
-                    <td className="strong">{t.venta_id ? nroVenta(ventaPorId(t.venta_id) || { id: t.venta_id }) : <span className="muted">Sin venta</span>}</td>
+                  <tr key={t.id} className="clickable" onClick={() => t.postventa_id && navigate(`/postventa/${t.postventa_id}`)}>
+                    <td className="strong">{t.postventa_id ? nroPostventa({ id: t.postventa_id }) : '—'}</td>
+                    <td>{t.venta_id ? nroVenta(ventaPorId(t.venta_id) || { id: t.venta_id }) : <span className="muted">Sin venta</span>}</td>
                     <td>{t.hito}</td>
                     <td>{fmtFecha(t.objetivo)}</td>
                     <td>{t.estado}</td>
