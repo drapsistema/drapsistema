@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { listar, obtener } from '../../lib/db';
 import { PageHeader, nombreCliente, diasDesde } from '../../shared/ui.jsx';
 import { useToast } from '../../shared/Toast.jsx';
-import Board from '../../shared/Board.jsx';
+import Board, { TotalVisibles } from '../../shared/Board.jsx';
 import { ETAPAS, camposFaltantes, avanzarEtapa } from './etapas.js';
 import ListaOportunidades from './ListaOportunidades.jsx';
 import { esGanada, claseResultado, BadgeResultado } from './resultado.jsx';
@@ -136,9 +136,12 @@ export default function Comercial() {
     const totalPerdidas = lista.length - totalGanadas;
     return (
       <>
-        <div className="kcol-sec"><span>Ganadas</span><span>{totalGanadas}</span></div>
+        {restantes > 0 && (
+          <div className="kcol-nota">Mostrando las {recientes.length} más recientes de {lista.length}</div>
+        )}
+        <div className="kcol-sec"><span>Ganadas</span><TotalVisibles total={totalGanadas} visibles={ganadas.length} /></div>
         {ganadas.map(tarjeta)}
-        <div className="kcol-sec" style={{ marginTop: 6 }}><span>Perdidas</span><span>{totalPerdidas}</span></div>
+        <div className="kcol-sec" style={{ marginTop: 6 }}><span>Perdidas</span><TotalVisibles total={totalPerdidas} visibles={perdidas.length} /></div>
         {perdidas.map(tarjeta)}
         {restantes > 0 && (
           <div className="kcol-mas">
@@ -191,6 +194,9 @@ export default function Comercial() {
         onCardClick={(o) => navigate(`/comercial/${o.id}`)}
         cardClass={claseResultado}
         renderColumna={columnaCierre}
+        contador={(estado, lista) => (estado.id === 'Cierre'
+          ? <TotalVisibles total={lista.length} visibles={Math.min(lista.length, MAX_CIERRE_KANBAN)} />
+          : null)}
         renderLista={(lista) => (
           <ListaOportunidades items={lista} abiertos={grupos}
             onToggle={(etapa) => setGrupos((g) => ({ ...g, [etapa]: !g[etapa] }))}

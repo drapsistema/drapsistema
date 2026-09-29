@@ -107,7 +107,7 @@ export const demoSeed = {
   ],
   configuracion: [
     { id: 1, ot_inicial: 440, ot_actual: 442, rem_inicial: 1280, rem_actual: 1284,
-      sem_com_verde: 7, sem_com_amarillo: 15, sem_post_verde: 30, sem_post_amarillo: 60,
+      sem_com_verde: 7, sem_com_amarillo: 15, sem_post_verde: 30, sem_post_amarillo: 60, sem_serv_verde: 7, sem_serv_amarillo: 15,
       mail_host: 'smtp.gmail.com', mail_port: '587', mail_seg: 'TLS', mail_user: 'sistema@empresa.com', mail_from: 'DRAP - Sistema de Gestión',
       // alcance de datos para vendedores (no aplica a tercerizados, que siempre ven solo lo suyo)
       vendedores_ven_todo: false },

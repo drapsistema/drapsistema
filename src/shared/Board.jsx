@@ -39,10 +39,11 @@ import './board.css';
 //   renderColumna: (estado, items, tarjeta) => JSX | null. Cuerpo propio de
 //        una columna; `tarjeta(item)` dibuja una tarjeta arrastrable.
 //   cardClass: (item) => string con clases extra para la tarjeta.
+//   contador: (estado, items) => JSX para el número del encabezado de columna.
 // ============================================================
 
 export default function Board({ estados, items, render, camposTransicion, onMover, onCardClick, columnas,
-  vista: vistaExterna, onVista, renderLista, renderColumna, cardClass }) {
+  vista: vistaExterna, onVista, renderLista, renderColumna, cardClass, contador }) {
   const [vistaInterna, setVistaInterna] = useState('kanban');
   const vista = vistaExterna || vistaInterna;
   const setVista = onVista || setVistaInterna;
@@ -59,14 +60,14 @@ export default function Board({ estados, items, render, camposTransicion, onMove
       <BoardDnd
         vista={vista} estados={estados} items={items} columnas={columnas}
         render={render} camposTransicion={camposTransicion} onMover={onMover} onCardClick={onCardClick}
-        renderLista={renderLista} renderColumna={renderColumna} cardClass={cardClass}
+        renderLista={renderLista} renderColumna={renderColumna} cardClass={cardClass} contador={contador}
       />
     </div>
   );
 }
 
 function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, onCardClick, columnas,
-  renderLista, renderColumna, cardClass }) {
+  renderLista, renderColumna, cardClass, contador }) {
   const [activo, setActivo] = useState(null);          // item que se arrastra
   const [transicion, setTransicion] = useState(null);  // { item, hacia, campos }
 
@@ -109,7 +110,7 @@ function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, on
           {estados.map((est) => (
             <Columna key={est.id} estado={est}
               items={items.filter((i) => i.estado === est.id)} render={render} onCardClick={onCardClick}
-              renderColumna={renderColumna} cardClass={cardClass} />
+              renderColumna={renderColumna} cardClass={cardClass} contador={contador} />
           ))}
         </div>
       ) : renderLista ? renderLista(items) : (
@@ -134,13 +135,13 @@ function BoardDnd({ vista, estados, items, render, camposTransicion, onMover, on
   );
 }
 
-function Columna({ estado, items, render, onCardClick, renderColumna, cardClass }) {
+function Columna({ estado, items, render, onCardClick, renderColumna, cardClass, contador }) {
   const { setNodeRef, isOver } = useDroppable({ id: estado.id });
   const tarjeta = (it) => <Tarjeta key={it.id} item={it} render={render} onCardClick={onCardClick} cardClass={cardClass} />;
   const propio = renderColumna ? renderColumna(estado, items, tarjeta) : null;
   return (
     <div ref={setNodeRef} className={'kcol' + (isOver ? ' drop-hover' : '')}>
-      <div className="kcol-h"><span>{estado.label}</span><span>{items.length}</span></div>
+      <div className="kcol-h"><span>{estado.label}</span><span>{(contador && contador(estado, items)) ?? items.length}</span></div>
       <div className="kcol-body">
         {propio || items.map(tarjeta)}
       </div>
@@ -151,6 +152,16 @@ function Columna({ estado, items, render, onCardClick, renderColumna, cardClass 
 // La tarjeta distingue click de arrastre: guarda la posición del puntero
 // al apretar (pointerdown, que no interfiere con dnd-kit) y, si al soltar
 // casi no se movió, lo trata como click y abre el detalle.
+// "13 (10)": total y, entre paréntesis, cuántos se ven. Solo si difieren.
+export function TotalVisibles({ total, visibles }) {
+  if (visibles >= total) return <>{total}</>;
+  return (
+    <span title={`${total} en total, ${visibles} visibles en el tablero`}>
+      {total} <span className="muted" style={{ fontWeight: 400 }}>({visibles})</span>
+    </span>
+  );
+}
+
 function Tarjeta({ item, render, onCardClick, cardClass }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: String(item.id) });
   const start = useRef({ x: 0, y: 0 });

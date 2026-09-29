@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listar, actualizar } from '../../lib/db';
+import { listar, actualizar, obtener } from '../../lib/db';
 import { PageHeader, Empty, nombreCliente, fmtFecha, diasDesde } from '../../shared/ui.jsx';
 import { comentarSistema } from '../../shared/Comentarios.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
-import Board from '../../shared/Board.jsx';
+import Board, { TotalVisibles } from '../../shared/Board.jsx';
 import ListaAgrupada, { todosPlegados } from '../../shared/ListaAgrupada.jsx';
 import { ESTADOS_SERVICE, validarTransicion } from './service.js';
 
@@ -26,6 +26,7 @@ export default function Service() {
   const [hasta, setHasta] = useState('');
   const [vista, setVista] = useState('kanban');
   const [grupos, setGrupos] = useState(todosPlegados(ESTADOS));
+  const [cfg, setCfg] = useState(null);
   const navigate = useNavigate();
   const toast = useToast();
   const { usuarioActualId, esAdmin } = useAuth();
@@ -33,6 +34,7 @@ export default function Service() {
   useEffect(() => {
     cargar();
     listar('usuarios').then(setUsuarios).catch(() => setUsuarios([]));
+    obtener('configuracion', 1).then(setCfg).catch(() => {});
   }, []);
 
   async function cargar() {
@@ -46,7 +48,10 @@ export default function Service() {
   const tecnicoDe = (t) => t.tecnico_id ?? tareasDe(t.id).find((ta) => ta.tecnico_id)?.tecnico_id ?? null;
   const nombreUsuario = (id) => usuarios.find((u) => u.id === id)?.nombre || '— sin asignar —';
 
-  // Datos calculados para la lista. Días = en el taller desde el ingreso.
+  // Datos calculados para la lista. Días = en el taller desde el ingreso;
+  // el semáforo usa los umbrales de Configuración → Parámetros.
+  const verde = cfg?.sem_serv_verde ?? 7;
+  const amarillo = cfg?.sem_serv_amarillo ?? 15;
   let items = trabajos.map((t) => {
     const dias = t.ingreso ? Math.max(0, diasDesde(t.ingreso)) : 0;
     return {
@@ -55,7 +60,7 @@ export default function Service() {
       _equipo: [`${t.marca || ''} ${t.modelo || ''}`.trim(), t.nro_serie].filter(Boolean).join(' · '),
       _tecnico: nombreUsuario(tecnicoDe(t)),
       _dias: dias,
-      _sem: dias <= 7 ? 'g' : dias <= 15 ? 'a' : 'r',
+      _sem: dias <= verde ? 'g' : dias <= amarillo ? 'a' : 'r',
     };
   });
 
@@ -106,6 +111,9 @@ export default function Service() {
     const restantes = lista.length - recientes.length;
     return (
       <>
+        {restantes > 0 && (
+          <div className="kcol-nota">Mostrando los {recientes.length} más recientes de {lista.length}</div>
+        )}
         {recientes.map(tarjeta)}
         {restantes > 0 && (
           <div className="kcol-mas">
@@ -180,6 +188,9 @@ export default function Service() {
           onMover={mover}
           onCardClick={(t) => navigate(`/service/${t.id}`)}
           renderColumna={columnaEntregada}
+          contador={(estado, lista) => (estado.id === 'Entregada'
+            ? <TotalVisibles total={lista.length} visibles={Math.min(lista.length, MAX_ENTREGADOS_KANBAN)} />
+            : null)}
           renderLista={(lista) => (
             <ListaAgrupada estados={ESTADOS} items={lista} columnas={COLUMNAS}
               abiertos={grupos} onToggle={(id) => setGrupos((g) => ({ ...g, [id]: !g[id] }))}

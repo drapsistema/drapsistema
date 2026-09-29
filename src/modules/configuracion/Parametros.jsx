@@ -24,6 +24,8 @@ export default function Parametros() {
       sem_com_amarillo: Number(cfg.sem_com_amarillo) || 0,
       sem_post_verde: Number(cfg.sem_post_verde) || 0,
       sem_post_amarillo: Number(cfg.sem_post_amarillo) || 0,
+      sem_serv_verde: Number(cfg.sem_serv_verde) || 0,
+      sem_serv_amarillo: Number(cfg.sem_serv_amarillo) || 0,
       vendedores_ven_todo: Boolean(cfg.vendedores_ven_todo),
     };
     try {
@@ -54,7 +56,7 @@ export default function Parametros() {
         <div className="card">
           <div className="card-h">Semáforo comercial</div>
           <div className="card-pad">
-            <div className="hint" style={{ marginBottom: 10 }}>Días desde el envío de la cotización</div>
+            <div className="hint" style={{ marginBottom: 10 }}>Días desde el último contacto con la oportunidad</div>
             <div className="form-grid">
               <Field label="Verde hasta" value={cfg.sem_com_verde} onChange={(v) => set('sem_com_verde', +v)} type="number" />
               <Field label="Amarillo hasta" value={cfg.sem_com_amarillo} onChange={(v) => set('sem_com_amarillo', +v)} type="number" />
@@ -68,6 +70,19 @@ export default function Parametros() {
             <div className="form-grid">
               <Field label="Verde hasta" value={cfg.sem_post_verde} onChange={(v) => set('sem_post_verde', +v)} type="number" />
               <Field label="Amarillo hasta" value={cfg.sem_post_amarillo} onChange={(v) => set('sem_post_amarillo', +v)} type="number" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="two" style={{ marginBottom: 16 }}>
+        <div className="card">
+          <div className="card-h">Semáforo service y reparación</div>
+          <div className="card-pad">
+            <div className="hint" style={{ marginBottom: 10 }}>Días en el taller desde el ingreso del equipo</div>
+            <div className="form-grid">
+              <Field label="Verde hasta" value={cfg.sem_serv_verde ?? 7} onChange={(v) => set('sem_serv_verde', +v)} type="number" />
+              <Field label="Amarillo hasta" value={cfg.sem_serv_amarillo ?? 15} onChange={(v) => set('sem_serv_amarillo', +v)} type="number" />
             </div>
           </div>
         </div>
