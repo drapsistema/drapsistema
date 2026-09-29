@@ -30,6 +30,10 @@
   --radius-sm: 11px;
   --shadow: 0 4px 20px rgba(23, 33, 48, .05), 0 1px 3px rgba(23, 33, 48, .04);
   --shadow-hover: 0 10px 30px rgba(23, 33, 48, .10);
+
+  /* Le indica al navegador el tema, para que dibuje acorde sus controles
+     nativos: ícono y ventana del calendario, listas desplegables, scrollbars. */
+  color-scheme: light;
 }
 
 /* ---------- Modo oscuro ---------- */
@@ -53,6 +57,7 @@ html[data-theme="dark"] {
   --bg: #13161B;
   --shadow: 0 4px 20px rgba(0, 0, 0, .35), 0 1px 3px rgba(0, 0, 0, .3);
   --shadow-hover: 0 10px 30px rgba(0, 0, 0, .45);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -68,6 +73,9 @@ body {
 }
 
 a { color: var(--brand-ink); cursor: pointer; text-decoration: none; }
+
+/* Opciones de las listas desplegables con los colores del tema. */
+select option { background: var(--panel); color: var(--ink); }
 a:hover { text-decoration: underline; }
 
 /* ---------- Botones ---------- */

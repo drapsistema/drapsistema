@@ -7,10 +7,11 @@ import Board from '../../shared/Board.jsx';
 import { ETAPAS, camposFaltantes, avanzarEtapa } from './etapas.js';
 import ListaOportunidades from './ListaOportunidades.jsx';
 import { esGanada, claseResultado, BadgeResultado } from './resultado.jsx';
+import { todosPlegados } from '../../shared/ListaAgrupada.jsx';
 
 const ESTADOS = ETAPAS.map((e) => ({ id: e, label: e }));
 const MAX_CIERRE_KANBAN = 10;
-const GRUPOS_INICIALES = { 'Contacto inicial': true, 'Cotización': true, 'Seguimiento': true, 'Cierre': false };
+const GRUPOS_INICIALES = todosPlegados(ESTADOS);
 
 // Agrupa una lista por una clave (para armar el contexto por oportunidad).
 function agrupar(lista, clave) {
@@ -130,11 +131,14 @@ export default function Comercial() {
     const ganadas = recientes.filter(esGanada);
     const perdidas = recientes.filter((o) => !esGanada(o));
     const restantes = lista.length - recientes.length;
+    // Los contadores muestran el total real, aunque se vean solo algunas tarjetas.
+    const totalGanadas = lista.filter(esGanada).length;
+    const totalPerdidas = lista.length - totalGanadas;
     return (
       <>
-        <div className="kcol-sec"><span>Ganadas</span><span>{ganadas.length}</span></div>
+        <div className="kcol-sec"><span>Ganadas</span><span>{totalGanadas}</span></div>
         {ganadas.map(tarjeta)}
-        <div className="kcol-sec" style={{ marginTop: 6 }}><span>Perdidas</span><span>{perdidas.length}</span></div>
+        <div className="kcol-sec" style={{ marginTop: 6 }}><span>Perdidas</span><span>{totalPerdidas}</span></div>
         {perdidas.map(tarjeta)}
         {restantes > 0 && (
           <div className="kcol-mas">

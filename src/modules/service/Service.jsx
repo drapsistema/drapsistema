@@ -1,28 +1,39 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listar, actualizar } from '../../lib/db';
-import { PageHeader, Empty, nombreCliente } from '../../shared/ui.jsx';
+import { PageHeader, Empty, nombreCliente, fmtFecha, diasDesde } from '../../shared/ui.jsx';
 import { comentarSistema } from '../../shared/Comentarios.jsx';
 import { useToast } from '../../shared/Toast.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import Board from '../../shared/Board.jsx';
+import ListaAgrupada, { todosPlegados } from '../../shared/ListaAgrupada.jsx';
 import { ESTADOS_SERVICE, validarTransicion } from './service.js';
 
 const ESTADOS = ESTADOS_SERVICE.map((e) => ({ id: e, label: e }));
+const MAX_ENTREGADOS_KANBAN = 10;
+const cerrado = (t) => t.estado === 'Finalizada' || t.estado === 'Entregada';
+// Entregados más recientes primero (sin fecha, al final).
+const porEntrega = (a, b) => (b.fecha_entrega || b.egreso || '').localeCompare(a.fecha_entrega || a.egreso || '') || b.id - a.id;
 
 export default function Service() {
   const [trabajos, setTrabajos] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [tareas, setTareas] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [q, setQ] = useState('');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
+  const [vista, setVista] = useState('kanban');
+  const [grupos, setGrupos] = useState(todosPlegados(ESTADOS));
   const navigate = useNavigate();
   const toast = useToast();
   const { usuarioActualId, esAdmin } = useAuth();
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => {
+    cargar();
+    listar('usuarios').then(setUsuarios).catch(() => setUsuarios([]));
+  }, []);
 
   async function cargar() {
     const [ts, cs, tk] = await Promise.all([listar('trabajos'), listar('clientes'), listar('tareas')]);
@@ -31,16 +42,30 @@ export default function Service() {
 
   const nombrePorId = (id) => { const c = clientes.find((x) => x.id === id); return c ? nombreCliente(c) : `Cliente #${id}`; };
   const tareasDe = (tid) => tareas.filter((t) => t.trabajo_id === tid);
+  // Técnico del trabajo; en trabajos viejos figura solo en las tareas.
+  const tecnicoDe = (t) => t.tecnico_id ?? tareasDe(t.id).find((ta) => ta.tecnico_id)?.tecnico_id ?? null;
+  const nombreUsuario = (id) => usuarios.find((u) => u.id === id)?.nombre || '— sin asignar —';
 
-  // Cada ticket lleva sus tareas para validar las transiciones al arrastrar.
-  let items = trabajos.map((t) => ({ ...t, estado: t.estado }));
+  // Datos calculados para la lista. Días = en el taller desde el ingreso.
+  let items = trabajos.map((t) => {
+    const dias = t.ingreso ? Math.max(0, diasDesde(t.ingreso)) : 0;
+    return {
+      ...t,
+      _cliente: nombrePorId(t.cliente_id),
+      _equipo: [`${t.marca || ''} ${t.modelo || ''}`.trim(), t.nro_serie].filter(Boolean).join(' · '),
+      _tecnico: nombreUsuario(tecnicoDe(t)),
+      _dias: dias,
+      _sem: dias <= 7 ? 'g' : dias <= 15 ? 'a' : 'r',
+    };
+  });
 
   const term = q.trim().toLowerCase();
   if (term) {
     items = items.filter((t) =>
       (t.nro || '').toLowerCase().includes(term)
-      || nombrePorId(t.cliente_id).toLowerCase().includes(term)
-      || `${t.marca || ''} ${t.modelo || ''} ${t.nro_serie || ''}`.toLowerCase().includes(term));
+      || t._cliente.toLowerCase().includes(term)
+      || t._equipo.toLowerCase().includes(term)
+      || t._tecnico.toLowerCase().includes(term));
   }
   if (desde) items = items.filter((t) => (t.ingreso || '') >= desde);
   if (hasta) items = items.filter((t) => (t.ingreso || '') <= hasta);
@@ -73,6 +98,50 @@ export default function Service() {
     }
   }
 
+  // Columna Entregada del Kanban: solo los 10 más recientes; el resto
+  // sigue en la vista Lista.
+  function columnaEntregada(estado, lista, tarjeta) {
+    if (estado.id !== 'Entregada') return null;
+    const recientes = [...lista].sort(porEntrega).slice(0, MAX_ENTREGADOS_KANBAN);
+    const restantes = lista.length - recientes.length;
+    return (
+      <>
+        {recientes.map(tarjeta)}
+        {restantes > 0 && (
+          <div className="kcol-mas">
+            <a onClick={() => { setGrupos((g) => ({ ...g, Entregada: true })); setVista('lista'); }}>
+              Ver los {restantes} restantes →
+            </a>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  const fecha = (f) => (f ? fmtFecha(f) : <span className="muted">—</span>);
+  const COLUMNAS = [
+    { key: 'nro', label: 'N°', className: 'strong', valor: (t) => t.nro || '', render: (t) => t.nro },
+    { key: 'tipo', label: 'Tipo', valor: (t) => t.tipo || '', render: (t) => <span className="badge">{t.tipo}</span> },
+    { key: 'cliente', label: 'Cliente', valor: (t) => t._cliente.toLowerCase(), render: (t) => t._cliente },
+    {
+      key: 'equipo', label: 'Equipo', className: 'celda-corta', valor: (t) => t._equipo.toLowerCase(),
+      render: (t) => <span title={t._equipo}>{t._equipo || <span className="muted">—</span>}</span>,
+    },
+    { key: 'tecnico', label: 'Técnico', valor: (t) => t._tecnico.toLowerCase(), render: (t) => t._tecnico },
+    {
+      key: 'dias', label: 'Días', valor: (t) => (cerrado(t) ? -1 : t._dias),
+      render: (t) => (cerrado(t)
+        ? <span className="muted">—</span>
+        : <span style={{ whiteSpace: 'nowrap' }}><span className={'dot ' + t._sem} />{t._dias} d</span>),
+    },
+    { key: 'ingreso', label: 'Ingreso', valor: (t) => t.ingreso || '', render: (t) => fecha(t.ingreso) },
+    { key: 'entrega', label: 'Entrega', valor: (t) => t.fecha_entrega || '', render: (t) => fecha(t.fecha_entrega) },
+  ];
+  // Activos: más días en el taller primero. Finalizada/Entregada: los más recientes primero.
+  const ordenPorDefecto = (estado) => (a, b) => (estado === 'Finalizada' || estado === 'Entregada'
+    ? porEntrega(a, b)
+    : b._dias - a._dias);
+
   return (
     <div>
       <PageHeader titulo="Service y reparación"
@@ -84,7 +153,7 @@ export default function Service() {
         <div className="card card-pad" style={{ marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="field" style={{ margin: 0, flex: '1 1 240px' }}>
             <label>Buscar</label>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="N°, cliente o equipo" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="N°, cliente, equipo o técnico" />
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Ingreso desde</label>
@@ -105,14 +174,22 @@ export default function Service() {
           estados={ESTADOS}
           items={items}
           columnas={3}
+          vista={vista}
+          onVista={setVista}
           camposTransicion={camposTransicion}
           onMover={mover}
           onCardClick={(t) => navigate(`/service/${t.id}`)}
+          renderColumna={columnaEntregada}
+          renderLista={(lista) => (
+            <ListaAgrupada estados={ESTADOS} items={lista} columnas={COLUMNAS}
+              abiertos={grupos} onToggle={(id) => setGrupos((g) => ({ ...g, [id]: !g[id] }))}
+              onAbrir={(t) => navigate(`/service/${t.id}`)} ordenPorDefecto={ordenPorDefecto} />
+          )}
           render={(t) => (
             <div>
               <div className="kcard-t">{t.nro} · {t.tipo}</div>
-              <div className="kcard-s">{nombrePorId(t.cliente_id)}</div>
-              <div className="kcard-s muted">{t.marca} {t.modelo} · {t.nro_serie}</div>
+              <div className="kcard-s">{t._cliente}</div>
+              <div className="kcard-s muted">{t._equipo}</div>
             </div>
           )}
         />
