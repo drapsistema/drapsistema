@@ -16,6 +16,7 @@ export const demoSeed = {
     { id: 4, tipo: 'Sociedad', razon_social: 'Hermanos Ruiz Soc. de Hecho', nombre: '', apellido: '',
       cuit: '30-71122334-5', domicilio: 'Zona rural, Cerrillos', telefono: '387-4998877',
       mail: 'ruizhnos@outlook.com', observaciones: '', vendedor_id: 3, activo: true },
+    { id: 5, tipo: 'Persona física', razon_social: 'SANZ NAVAMUEL AGUSTIN', nombre: '', apellido: '', cuit: '20352810097', domicilio: '', telefono: '3874156688', mail: '', observaciones: 'Importado del Excel de clientes.', activo: true, localidad: 'El Carril', provincia: 'Salta', actividad: 'Productor' },
   ],
   contactos: [
     { id: 1, cliente_id: 1, nombre: 'Marta', apellido: 'Giménez', cargo: 'Jefa de Compras', telefono: '387-4567891', mail: 'mgimenez@agrosur.com' },
@@ -70,6 +71,7 @@ export const demoSeed = {
     { id: 1, venta_id: 1, modelo: 'DJI Agras T25', nro_serie: 'T25-88213', activado: true, alta_dji: true, garantia: '2026-07-01' },
     { id: 2, venta_id: 2, modelo: 'DJI Agras T40', nro_serie: 'T40-77120', activado: true, alta_dji: true, garantia: '2026-03-18' },
     { id: 3, venta_id: 2, modelo: 'DJI Agras T40', nro_serie: 'T40-77121', activado: true, alta_dji: false, garantia: '2026-03-18' },
+    { id: 4, venta_id: null, cliente_id: 5, equipo: 'T50', ns_dron: '63YBM76002003V', fecha_activacion: '2025-04-14', activado: true, localidad: 'El Carril', entrega_a_cargo: 'Lautaro' },
   ],
   postventas: [
     { id: 1, venta_id: 1, cliente_id: 3, equipo: null, creado_en: '2025-07-01' },

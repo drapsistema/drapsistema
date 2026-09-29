@@ -5,7 +5,7 @@ import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, AvisoClienteInc
 import { useAuth } from '../../shared/Auth.jsx';
 import Icon from '../../shared/Icon.jsx';
 
-const TABS = ['Datos y contactos', 'Historial comercial', 'Ventas', 'Postventa', 'Service'];
+const TABS = ['Datos y contactos', 'Historial comercial', 'Ventas', 'Equipos', 'Postventa', 'Service'];
 
 // Helpers de formato/validación (mismos criterios que el alta de cliente).
 const soloNumeros = (s) => (s || '').replace(/\D/g, '');
@@ -21,6 +21,7 @@ export default function ClienteFicha() {
   const [ventas, setVentas] = useState([]);
   const [trabajos, setTrabajos] = useState([]);
   const [tareas, setTareas] = useState([]); // postventa (tareas de las ventas del cliente)
+  const [equipos, setEquipos] = useState([]);
   const [tab, setTab] = useState('Datos y contactos');
   const { esAdmin } = useAuth();
 
@@ -32,6 +33,10 @@ export default function ClienteFicha() {
     listar('trabajos', { cliente_id: Number(id) }).then(setTrabajos).catch(() => setTrabajos([]));
     listar('ventas', { cliente_id: Number(id) }).then(async (vs) => {
       setVentas(vs);
+      // Equipos del cliente: los de sus ventas y los cargados sin venta.
+      const idsV = new Set(vs.map((v) => v.id));
+      listar('productos').then((ps) => setEquipos(ps.filter((p) => idsV.has(p.venta_id) || p.cliente_id === Number(id))))
+        .catch(() => setEquipos([]));
       // Tareas de postventa del cliente: las de sus ventas y las cargadas
       // directo al cliente (equipos comprados en otro lado).
       const ids = new Set(vs.map((v) => v.id));
@@ -81,6 +86,8 @@ export default function ClienteFicha() {
               <Row k="Tipo" v={cliente.tipo} />
               <Row k="CUIT" v={cliente.cuit || '—'} />
               <Row k="Domicilio" v={cliente.domicilio || '—'} />
+              <Row k="Localidad" v={[cliente.localidad, cliente.provincia].filter(Boolean).join(', ') || '—'} />
+              <Row k="Actividad" v={cliente.actividad || '—'} />
               <Row k="Teléfono" v={cliente.telefono || '—'} />
               <Row k="Mail" v={cliente.mail || '—'} />
               <Row k="Observaciones" v={cliente.observaciones || '—'} />
@@ -127,6 +134,29 @@ export default function ClienteFicha() {
                     <td>{fmtFecha(v.fecha_ganada)}</td>
                     <td>{v.fecha_entrega ? fmtFecha(v.fecha_entrega) : '—'}</td>
                     <td>{v.estado}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {tab === 'Equipos' && (
+        <div className="card table-wrap" style={{ marginTop: 16 }}>
+          {equipos.length === 0 ? (
+            <Empty>Este cliente todavía no tiene equipos activados.</Empty>
+          ) : (
+            <table>
+              <thead><tr><th>Equipo</th><th>N° serie dron</th><th>Activación</th><th>Venta</th></tr></thead>
+              <tbody>
+                {equipos.map((p) => (
+                  <tr key={p.id} className={p.venta_id ? 'clickable' : undefined}
+                    onClick={() => p.venta_id && navigate(`/ventas/${p.venta_id}`)}>
+                    <td className="strong">{p.equipo || p.modelo || 'Equipo'}</td>
+                    <td>{p.ns_dron || <span className="muted">—</span>}</td>
+                    <td>{p.fecha_activacion ? fmtFecha(p.fecha_activacion) : <span className="muted">—</span>}</td>
+                    <td>{p.venta_id ? nroVenta(ventaPorId(p.venta_id) || { id: p.venta_id }) : <span className="badge">Sin venta</span>}</td>
                   </tr>
                 ))}
               </tbody>

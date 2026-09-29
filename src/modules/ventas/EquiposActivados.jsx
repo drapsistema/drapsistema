@@ -34,8 +34,13 @@ export default function EquiposActivados() {
 
   const ventaDe = (vid) => ventas.find((v) => v.id === vid);
   const nombreCli = (clid) => { const c = clientes.find((x) => x.id === clid); return c ? nombreCliente(c) : '—'; };
-  const clienteDe = (p) => { const v = ventaDe(p.venta_id); return v ? nombreCli(v.cliente_id) : '—'; };
-  const vt = (vid) => nroVenta(ventaDe(vid) || { id: vid });
+  // Cliente: el de la venta o, si el equipo se cargó sin venta, el propio.
+  const clienteDe = (p) => {
+    const v = p.venta_id ? ventaDe(p.venta_id) : null;
+    if (v) return nombreCli(v.cliente_id);
+    return p.cliente_id ? nombreCli(p.cliente_id) : '—';
+  };
+  const vt = (vid) => (vid ? nroVenta(ventaDe(vid) || { id: vid }) : 'Sin venta');
   const nombreEquipo = (p) => p.equipo || p.modelo || 'Equipo sin nombre';
 
   const valorCol = (p, key) => {
@@ -85,7 +90,7 @@ export default function EquiposActivados() {
 
   return (
     <div>
-      <PageHeader titulo="Equipos activados" sub={`${filas.length} de ${productos.length} equipos cargados en ventas`} />
+      <PageHeader titulo="Equipos activados" sub={`${filas.length} de ${productos.length} equipos`} />
 
       {!cargando && productos.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 14 }}>
@@ -119,7 +124,9 @@ export default function EquiposActivados() {
                   <td className="strong">{nombreEquipo(p)}</td>
                   <td>{p.ns_dron || <span className="muted">—</span>}</td>
                   <td>{clienteDe(p)}</td>
-                  <td><a onClick={() => navigate(`/ventas/${p.venta_id}`)}>{vt(p.venta_id)}</a></td>
+                  <td>{p.venta_id
+                    ? <a onClick={() => navigate(`/ventas/${p.venta_id}`)}>{vt(p.venta_id)}</a>
+                    : <span className="badge">Sin venta</span>}</td>
                   <td>{p.localidad || <span className="muted">—</span>}</td>
                   <td>{p.activado ? <span className="badge g">Sí</span> : <span className="badge">No</span>}</td>
                   <td style={{ textAlign: 'right' }}>
@@ -135,7 +142,7 @@ export default function EquiposActivados() {
       {modal && (
         <ModalCampos
           titulo="Editar equipo"
-          subtitulo={`Venta ${vt(modal.venta_id)} · ${clienteDe(modal)}`}
+          subtitulo={`${modal.venta_id ? `Venta ${vt(modal.venta_id)}` : 'Sin venta'} · ${clienteDe(modal)}`}
           campos={CAMPOS_EQUIPO}
           valoresIniciales={modal}
           grid

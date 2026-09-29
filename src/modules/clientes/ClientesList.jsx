@@ -9,6 +9,7 @@ const COLS = [
   { key: 'nombre', label: 'Nombre / Razón social' },
   { key: 'tipo', label: 'Tipo' },
   { key: 'cuit', label: 'CUIT' },
+  { key: 'localidad', label: 'Localidad' },
   { key: 'telefono', label: 'Teléfono' },
   { key: 'mail', label: 'Mail' },
   { key: 'cargado', label: 'Cargado por' },
@@ -41,6 +42,7 @@ export default function ClientesList() {
       case 'nombre': return nombreCliente(c).toLowerCase();
       case 'tipo': return c.tipo || '';
       case 'cuit': return c.cuit || '';
+      case 'localidad': return `${c.localidad || ''} ${c.provincia || ''}`.toLowerCase();
       case 'telefono': return c.telefono || '';
       case 'mail': return (c.mail || '').toLowerCase();
       case 'cargado': return cargadoPor(c.creado_por).toLowerCase();
@@ -54,6 +56,7 @@ export default function ClientesList() {
     filas = filas.filter((c) =>
       nombreCliente(c).toLowerCase().includes(term)
       || (c.cuit || '').includes(term)
+      || `${c.localidad || ''} ${c.provincia || ''} ${c.actividad || ''}`.toLowerCase().includes(term)
       || (c.tipo || '').toLowerCase().includes(term)
       || (c.mail || '').toLowerCase().includes(term)
       || cargadoPor(c.creado_por).toLowerCase().includes(term));
@@ -94,7 +97,7 @@ export default function ClientesList() {
         <div className="card card-pad" style={{ marginBottom: 14 }}>
           <div className="field" style={{ margin: 0 }}>
             <label>Buscar</label>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre, CUIT, mail o quién lo cargó" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre, CUIT, localidad, mail o quién lo cargó" />
           </div>
         </div>
       )}
@@ -130,6 +133,7 @@ export default function ClientesList() {
                   </td>
                   <td><span className="badge">{c.tipo}</span></td>
                   <td>{c.cuit || <span className="muted">—</span>}</td>
+                  <td className="sm">{[c.localidad, c.provincia].filter(Boolean).join(', ') || <span className="muted">—</span>}</td>
                   <td>{c.telefono || <span className="muted">—</span>}</td>
                   <td>{c.mail || <span className="muted">—</span>}</td>
                   <td className="muted sm">{cargadoPor(c.creado_por)}</td>

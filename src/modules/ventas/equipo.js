@@ -16,4 +16,5 @@ export const CAMPOS_EQUIPO = [
   { name: 'ns_generador', label: 'N° serie generador', type: 'text' },
   { name: 'localidad', label: 'Localidad', type: 'text' },
   { name: 'mail', label: 'Mail', type: 'text' },
+  { name: 'entrega_a_cargo', label: 'Entrega a cargo de', type: 'text' },
 ];

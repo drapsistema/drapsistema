@@ -32,7 +32,10 @@ export function Empty({ children }) {
 // Nombre visible de un cliente según su tipo.
 export function nombreCliente(c) {
   if (!c) return '';
-  return c.tipo === 'Persona física' ? `${c.nombre} ${c.apellido}`.trim() : c.razon_social;
+  // Personas físicas importadas del Excel traen el nombre completo en
+  // razon_social hasta que alguien lo separa en nombre y apellido.
+  if (c.tipo === 'Persona física') return `${c.nombre || ''} ${c.apellido || ''}`.trim() || c.razon_social || '';
+  return c.razon_social || '';
 }
 
 // Número visible de una venta: el que cargó el usuario o el correlativo por id.

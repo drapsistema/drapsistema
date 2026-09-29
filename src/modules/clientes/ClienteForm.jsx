@@ -8,8 +8,12 @@ import Icon from '../../shared/Icon.jsx';
 
 const VACIO = {
   tipo: 'Persona jurídica', razon_social: '', nombre: '', apellido: '', cuit: '',
-  domicilio: '', telefono: '', mail: '', observaciones: '', activo: true,
+  domicilio: '', localidad: '', provincia: '', actividad: '', telefono: '', mail: '', observaciones: '', activo: true,
 };
+const PROVINCIAS = ['Salta', 'Jujuy', 'Tucumán', 'Catamarca', 'Santiago del Estero', 'Chaco', 'Formosa', 'Corrientes', 'Misiones',
+  'Santa Fe', 'Córdoba', 'Buenos Aires', 'CABA', 'Entre Ríos', 'La Rioja', 'San Juan', 'Mendoza', 'San Luis', 'La Pampa',
+  'Neuquén', 'Río Negro', 'Chubut', 'Santa Cruz', 'Tierra del Fuego'];
+const ACTIVIDADES = ['Productor', 'Contratista'];
 
 // Helpers de formato/validación.
 const soloNumeros = (s) => (s || '').replace(/\D/g, '');
@@ -35,6 +39,7 @@ export default function ClienteForm() {
         ...c,
         tipo: normalizarTipo(c.tipo),
         cuit: c.cuit || '', domicilio: c.domicilio || '', telefono: c.telefono || '',
+        localidad: c.localidad || '', provincia: c.provincia || '', actividad: c.actividad || '',
         mail: c.mail || '', observaciones: c.observaciones || '',
         nombre: c.nombre || '', apellido: c.apellido || '', razon_social: c.razon_social || '',
       }));
@@ -207,6 +212,14 @@ export default function ClienteForm() {
             </div>
           )}
 
+          {esPF && form.razon_social && !form.nombre && !form.apellido && (
+            <div className="field full">
+              <div className="aviso warn">
+                Este cliente se importó con el nombre completo: <b style={{ margin: '0 4px' }}>{form.razon_social}</b>.
+                Separalo en nombre y apellido para guardar.
+              </div>
+            </div>
+          )}
           {esPF ? (
             <>
               <div className="field">
@@ -245,6 +258,21 @@ export default function ClienteForm() {
           <div className="field full">
             <label>Domicilio fiscal</label>
             <input value={form.domicilio} onChange={(e) => set('domicilio', e.target.value)} />
+          </div>
+
+          <div className="field">
+            <label>Localidad</label>
+            <input value={form.localidad} onChange={(e) => set('localidad', e.target.value)} placeholder="Ej: Rosario de Lerma" />
+          </div>
+          <div className="field">
+            <label>Provincia</label>
+            <input value={form.provincia} onChange={(e) => set('provincia', e.target.value)} list="lista-provincias" placeholder="Ej: Salta" />
+            <datalist id="lista-provincias">{PROVINCIAS.map((p) => <option key={p} value={p} />)}</datalist>
+          </div>
+          <div className="field">
+            <label>Actividad</label>
+            <input value={form.actividad} onChange={(e) => set('actividad', e.target.value)} list="lista-actividades" placeholder="Productor, Contratista…" />
+            <datalist id="lista-actividades">{ACTIVIDADES.map((a) => <option key={a} value={a} />)}</datalist>
           </div>
 
           <div className="field">

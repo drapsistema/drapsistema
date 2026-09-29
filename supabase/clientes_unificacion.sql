@@ -2,8 +2,8 @@
 -- CLIENTES: unificación de duplicados
 -- ------------------------------------------------------------
 -- Correr en Supabase -> SQL Editor (todo junto). Idempotente.
--- Requiere haber corrido antes clientes_cuit_opcional.sql, tanda2.sql
--- y tanda3.sql.
+-- Requiere haber corrido antes clientes_cuit_opcional.sql, tanda2.sql,
+-- tanda3.sql y tanda6.sql.
 -- ============================================================
 
 
@@ -94,12 +94,10 @@ begin
     raise exception 'Los dos clientes tienen CUIT distinto: no parecen ser el mismo';
   end if;
 
-  v_nombre_o := case when o.tipo = 'Persona física'
-                     then trim(coalesce(o.nombre, '') || ' ' || coalesce(o.apellido, ''))
-                     else o.razon_social end;
-  v_nombre_d := case when d.tipo = 'Persona física'
-                     then trim(coalesce(d.nombre, '') || ' ' || coalesce(d.apellido, ''))
-                     else d.razon_social end;
+  v_nombre_o := coalesce(case when o.tipo = 'Persona física'
+                     then nullif(trim(coalesce(o.nombre, '') || ' ' || coalesce(o.apellido, '')), '') end, o.razon_social);
+  v_nombre_d := coalesce(case when d.tipo = 'Persona física'
+                     then nullif(trim(coalesce(d.nombre, '') || ' ' || coalesce(d.apellido, '')), '') end, d.razon_social);
   v_texto := '[sistema] Cliente unificado: "' || coalesce(v_nombre_o, '') || '" (#' || p_origen
              || ') pasó a "' || coalesce(v_nombre_d, '') || '" (#' || p_destino || ').';
 
@@ -122,6 +120,8 @@ begin
     select 'pv', id, v_texto, current_date, app_uid() from postventas where cliente_id = p_origen;
   update postventas       set cliente_id = p_destino where cliente_id = p_origen;
   update tareas_postventa set cliente_id = p_destino where cliente_id = p_origen;
+  -- Equipos activados sin venta (requiere tanda6.sql).
+  update productos        set cliente_id = p_destino where cliente_id = p_origen;
 
   -- El CUIT es único: primero se libera del origen, después pasa al destino.
   update clientes set activo = false, unificado_en = p_destino, cuit = null where id = p_origen;
