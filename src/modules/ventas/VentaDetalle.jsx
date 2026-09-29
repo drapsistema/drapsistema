@@ -118,6 +118,7 @@ export default function VentaDetalle() {
   async function guardarCobro() {
     const e = {};
     if (!cobro.estado_cobro) e.estado_cobro = true;
+    if (cobro.con_iva === null) e.con_iva = true;
     if (cobro.formas_pago.length === 0) e.formas_pago = true;
     if (cobro.formas_pago.includes('Otros') && !cobro.forma_pago_otro.trim()) e.forma_pago_otro = true;
     setErroresCobro(e);
@@ -150,11 +151,20 @@ export default function VentaDetalle() {
   }
 
   async function guardarNumero() {
-    const nuevo = numeroInput.trim();
+    // Vacío = volver al número automático de esta venta.
+    const nuevo = numeroInput.trim().replace(/\s+/g, ' ') || `VT-${String(venta.id).padStart(4, '0')}`;
+    const clave = (s) => s.trim().toUpperCase();
+    if (clave(nuevo) === clave(nroVenta(venta))) { setNumeroInput(null); return; }
     try {
-      await actualizar('ventas', id, { numero: nuevo || null });
+      // Chequeo contra las ventas visibles (incluye los números automáticos);
+      // la base igual lo impide para todas con su índice único.
+      const todas = await listar('ventas');
+      const otra = todas.find((v) => v.id !== venta.id && clave(nroVenta(v)) === clave(nuevo));
+      if (otra) { toast(`Ya existe otra venta con el número ${nroVenta(otra)}`, 'err'); return; }
+
+      await actualizar('ventas', id, { numero: nuevo });
       await comentarSistema('venta', id,
-        `Número de venta cambiado de ${nroVenta(venta)} a ${nroVenta({ ...venta, numero: nuevo || null })}.`, usuarioActualId);
+        `Número de venta cambiado de ${nroVenta(venta)} a ${nuevo}.`, usuarioActualId);
       setNumeroInput(null);
       toast('Número de venta actualizado');
       await cargar();
@@ -360,8 +370,8 @@ export default function VentaDetalle() {
                     </div>
 
                     <div className="field">
-                      <label>IVA</label>
-                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                      <label>IVA <span className="req">*</span></label>
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', ...(erroresCobro.con_iva ? rojo : {}) }}>
                         {[['Con IVA', true], ['Sin IVA', false]].map(([txt, val]) => (
                           <label key={txt} style={opcion}>
                             <input type="checkbox" checked={cobro.con_iva === val}
