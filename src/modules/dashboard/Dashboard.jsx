@@ -10,20 +10,28 @@ const ETAPAS_C = ['Contacto inicial', 'Cotización', 'Seguimiento', 'Cierre'];
 const ESTADOS_S = ['Ingresada', 'En diagnóstico', 'En reparación', 'Esperando repuestos', 'Finalizada', 'Entregada'];
 
 // ============================================================
-// PERÍODO
-// Por defecto, el mes en curso (se recalcula al abrir: en octubre
-// muestra octubre). 'YYYY-MM' = un mes puntual · null = todo el historial.
+// PERÍODO: fecha desde / hasta. Por defecto, el mes en curso (se
+// recalcula al abrir: en octubre muestra octubre).
 // ============================================================
 const pad = (n) => String(n).padStart(2, '0');
+const iso = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 const mesDe = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`;
-const nombreMes = (ym) => {
-  const [y, m] = ym.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
-};
-// Últimos 24 meses para el selector.
-function mesesRecientes(n = 24) {
+function mesEnCurso() {
   const hoy = new Date();
-  return Array.from({ length: n }, (_, i) => mesDe(new Date(hoy.getFullYear(), hoy.getMonth() - i, 1)));
+  return {
+    desde: iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)),
+    hasta: iso(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0)),
+  };
+}
+// "septiembre de 2026" si el rango es un mes completo; si no, "01/09/2026 – 15/09/2026".
+function etiquetaPeriodo(desde, hasta) {
+  const [y, m] = desde.split('-').map(Number);
+  const finDeMes = iso(new Date(y, m, 0));
+  if (desde.endsWith('-01') && hasta === finDeMes) {
+    return new Date(y, m - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  }
+  const f = (s) => s.split('-').reverse().join('/');
+  return `${f(desde)} – ${f(hasta)}`;
 }
 
 // Ventas de los 6 meses que terminan en `hastaMes` (o el actual).
@@ -58,7 +66,7 @@ function Kpi({ label, value, foot, to, cl }) {
 function Seccion({ titulo, children }) {
   return (
     <>
-      <div className="sm muted" style={{ textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600, margin: '18px 0 8px' }}>{titulo}</div>
+      <div className="sm muted" style={{ textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600, margin: '12px 0 6px' }}>{titulo}</div>
       <div className="kpi-grid">{children}</div>
     </>
   );
@@ -347,7 +355,7 @@ export default function Dashboard() {
   const [cfg, setCfg] = useState(null);
   const [tab, setTab] = useState(null);
   const [verUsuarioId, setVerUsuarioId] = useState(''); // admin: '' = toda la empresa
-  const [periodo, setPeriodo] = useState('');          // '' = mes en curso · 'todo' · 'YYYY-MM'
+  const [rango, setRango] = useState(null);            // null = mes en curso · { desde, hasta }
   const { roles, esAdmin, usuarioActualId } = useAuth();
 
   useEffect(() => {
@@ -366,14 +374,19 @@ export default function Dashboard() {
     obtener('configuracion', 1).then(setCfg).catch(() => {});
   }, []);
 
-  // Período elegido.
-  const mesActual = mesDe(new Date());
-  const mes = periodo === 'todo' ? null : (periodo || mesActual);
+  // Período elegido (si el usuario invierte las fechas, se ordenan solas).
+  const r = rango || mesEnCurso();
+  const [desde, hasta] = r.desde <= r.hasta ? [r.desde, r.hasta] : [r.hasta, r.desde];
   const p = {
-    mes,
-    etiqueta: mes ? nombreMes(mes) : 'todo el historial',
-    enP: (fecha) => !mes || (Boolean(fecha) && String(fecha).slice(0, 7) === mes),
+    mes: hasta.slice(0, 7), // el gráfico "Ventas por mes" termina en el mes de "hasta"
+    etiqueta: etiquetaPeriodo(desde, hasta),
+    enP: (fecha) => {
+      if (!fecha) return false;
+      const f = String(fecha).slice(0, 10);
+      return f >= desde && f <= hasta;
+    },
   };
+  const setFecha = (campo, valor) => { if (valor) setRango({ desde, hasta, [campo]: valor }); };
 
   // Usuario elegido (solo admin). Sin elegir, el admin ve toda la empresa.
   const verUsuario = esAdmin && verUsuarioId ? usuarios.find((u) => u.id === Number(verUsuarioId)) : null;
@@ -413,40 +426,33 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader titulo="Dashboard" sub="Indicadores y alertas de tu operación. Tocá un indicador para ir al detalle." />
-
-      <div className="card card-pad" style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        {esAdmin && (
-          <div className="field" style={{ margin: 0, flex: '1 1 220px' }}>
-            <label>Usuario</label>
-            <select value={verUsuarioId} onChange={(e) => { setVerUsuarioId(e.target.value); setTab(null); }}>
-              <option value="">Todos · toda la empresa</option>
+      <div className="dash-top">
+        <h1>Dashboard</h1>
+        <div className="dash-filtros">
+          {esAdmin && (
+            <select value={verUsuarioId} title="Ver lo de un usuario"
+              onChange={(e) => { setVerUsuarioId(e.target.value); setTab(null); }}
+              className={verUsuario ? 'activo' : undefined}>
+              <option value="">Todos los usuarios</option>
               {usuariosConPanel.map((u) => (
-                <option key={u.id} value={u.id}>{u.nombre} · {rolesDe(u).filter((r) => r !== 'Administrador').join(', ')}{u.acceso && u.acceso !== 'Activo' ? ' (inactivo)' : ''}</option>
+                <option key={u.id} value={u.id}>{u.nombre} · {rolesDe(u).filter((x) => x !== 'Administrador').join(', ')}{u.acceso && u.acceso !== 'Activo' ? ' (inactivo)' : ''}</option>
               ))}
             </select>
-          </div>
-        )}
-        <div className="field" style={{ margin: 0, flex: '1 1 200px' }}>
-          <label>Período</label>
-          <select value={periodo} onChange={(e) => setPeriodo(e.target.value)}>
-            <option value="">Mes en curso · {nombreMes(mesActual)}</option>
-            {mesesRecientes().slice(1).map((m) => <option key={m} value={m}>{nombreMes(m)}</option>)}
-            <option value="todo">Todo el historial</option>
-          </select>
+          )}
+          <span className="dash-rango" title="Período">
+            <input type="date" value={desde} onChange={(e) => setFecha('desde', e.target.value)} aria-label="Desde" />
+            <span className="muted">→</span>
+            <input type="date" value={hasta} onChange={(e) => setFecha('hasta', e.target.value)} aria-label="Hasta" />
+          </span>
+          {(verUsuarioId || rango) && (
+            <button className="btn ghost sm" onClick={() => { setVerUsuarioId(''); setRango(null); setTab(null); }}
+              title="Volver a todos los usuarios y al mes en curso">Mes en curso</button>
+          )}
         </div>
-        {(verUsuarioId || periodo) && (
-          <button className="btn ghost sm" onClick={() => { setVerUsuarioId(''); setPeriodo(''); setTab(null); }}>Limpiar filtros</button>
-        )}
       </div>
 
-      {verUsuario && (
-        <div className="aviso" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="grow">Estás viendo solo lo de <b>{verUsuario.nombre}</b>, tal como lo ve esa persona.</span>
-        </div>
-      )}
       {dashboards.length > 1 && (
-        <div className="tabs-row" style={{ marginBottom: 6 }}>
+        <div className="tabs-row" style={{ marginBottom: 2 }}>
           {dashboards.map((x) => (
             <button key={x.id} className={'tab' + (activo === x.id ? ' on' : '')} onClick={() => setTab(x.id)}>{x.label}</button>
           ))}

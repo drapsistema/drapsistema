@@ -168,6 +168,19 @@ tbody tr.clickable:hover { background: var(--panel-2); }
 .tab.on { color: var(--brand-ink); border-bottom-color: var(--brand); }
 
 /* ---------- KPIs del dashboard ---------- */
+/* Encabezado compacto del dashboard: título y filtros en una sola línea. */
+.dash-top { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.dash-top h1 { font-size: 22px; font-weight: 700; letter-spacing: -.01em; flex: 1 1 auto; }
+.dash-filtros { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dash-filtros select, .dash-rango input {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+  padding: 6px 9px; font-size: 12.5px; color: var(--ink); font-family: inherit; outline: none;
+}
+.dash-filtros select { max-width: 230px; }
+.dash-filtros select.activo { border-color: var(--brand); background: var(--brand-bg); }
+.dash-rango { display: inline-flex; align-items: center; gap: 6px; }
+.dash-filtros select:focus, .dash-rango input:focus { border-color: var(--brand); }
+
 .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
 .kpi {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
