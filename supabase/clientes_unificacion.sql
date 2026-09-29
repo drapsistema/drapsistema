@@ -3,7 +3,7 @@
 -- ------------------------------------------------------------
 -- Correr en Supabase -> SQL Editor (todo junto). Idempotente.
 -- Requiere haber corrido antes clientes_cuit_opcional.sql, tanda2.sql
--- y postventa_numero.sql.
+-- y tanda3.sql.
 -- ============================================================
 
 
@@ -117,7 +117,7 @@ begin
   get diagnostics n_ventas = row_count;
   update trabajos      set cliente_id = p_destino where cliente_id = p_origen;
   get diagnostics n_trabajos = row_count;
-  -- Postventas (requiere tanda2.sql y postventa_numero.sql).
+  -- Postventas (requiere tanda2.sql y tanda3.sql).
   insert into comentarios (entidad, ref_id, texto, fecha, autor_id)
     select 'pv', id, v_texto, current_date, app_uid() from postventas where cliente_id = p_origen;
   update postventas       set cliente_id = p_destino where cliente_id = p_origen;
