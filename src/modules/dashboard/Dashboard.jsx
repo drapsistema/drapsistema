@@ -4,27 +4,43 @@ import { listar, obtener } from '../../lib/db';
 import { PageHeader, money, diasDesde } from '../../shared/ui.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
 import { rolesDe } from '../../shared/permisos';
+import { estadoCobro } from '../ventas/cobro.js';
 
 const ETAPAS_C = ['Contacto inicial', 'Cotización', 'Seguimiento', 'Cierre'];
 const ESTADOS_S = ['Ingresada', 'En diagnóstico', 'En reparación', 'Esperando repuestos', 'Finalizada', 'Entregada'];
 
-// Parseo de fecha local (evita el corrimiento por zona horaria en agrupar por mes).
-const D = (iso) => (iso ? new Date(iso + 'T00:00:00') : null);
-const mesActual = (iso) => {
-  const d = D(iso); if (!d) return false;
-  const n = new Date();
-  return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear();
+// ============================================================
+// PERÍODO
+// Por defecto, el mes en curso (se recalcula al abrir: en octubre
+// muestra octubre). 'YYYY-MM' = un mes puntual · null = todo el historial.
+// ============================================================
+const pad = (n) => String(n).padStart(2, '0');
+const mesDe = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`;
+const nombreMes = (ym) => {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
 };
-function ventasPorMes(ventas, n = 6) {
-  const now = new Date(); const out = [];
+// Últimos 24 meses para el selector.
+function mesesRecientes(n = 24) {
+  const hoy = new Date();
+  return Array.from({ length: n }, (_, i) => mesDe(new Date(hoy.getFullYear(), hoy.getMonth() - i, 1)));
+}
+
+// Ventas de los 6 meses que terminan en `hastaMes` (o el actual).
+function ventasPorMes(ventas, hastaMes, n = 6) {
+  const [y, m] = (hastaMes || mesDe(new Date())).split('-').map(Number);
+  const out = [];
   for (let i = n - 1; i >= 0; i--) {
-    const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const dt = new Date(y, m - 1 - i, 1);
+    const ym = mesDe(dt);
     const label = dt.toLocaleDateString('es-AR', { month: 'short' }).replace('.', '');
-    const value = ventas.filter((v) => { const f = D(v.fecha_ganada); return f && f.getMonth() === dt.getMonth() && f.getFullYear() === dt.getFullYear(); }).length;
-    out.push({ label, value });
+    out.push({ label, value: ventas.filter((v) => (v.fecha_ganada || '').slice(0, 7) === ym).length });
   }
   return out;
 }
+
+const vigente = (v) => v.estado !== 'Cancelada';
+const porCobrar = (v) => vigente(v) && v.fecha_entrega && estadoCobro(v) !== 'Total';
 
 // ---------- Componentes reutilizables ----------
 function Kpi({ label, value, foot, to, cl }) {
@@ -36,6 +52,15 @@ function Kpi({ label, value, foot, to, cl }) {
       <div className="kpi-value" style={color ? { color } : undefined}>{value}</div>
       {foot && <div className="kpi-foot">{foot}</div>}
     </div>
+  );
+}
+
+function Seccion({ titulo, children }) {
+  return (
+    <>
+      <div className="sm muted" style={{ textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600, margin: '18px 0 8px' }}>{titulo}</div>
+      <div className="kpi-grid">{children}</div>
+    </>
   );
 }
 
@@ -93,7 +118,7 @@ function Alertas({ items }) {
   const activos = items.filter((a) => a.n > 0);
   return (
     <div className="card">
-      <div className="card-h"><span className="grow">Alertas</span>{activos.length > 0 && <span className="badge r">{activos.length}</span>}</div>
+      <div className="card-h"><span className="grow">Alertas (hoy)</span>{activos.length > 0 && <span className="badge r">{activos.length}</span>}</div>
       <div className="card-pad">
         {activos.length === 0 ? (
           <div className="muted sm">Todo en orden, sin alertas.</div>
@@ -111,13 +136,14 @@ function Alertas({ items }) {
 }
 
 // ============================================================
-// PANELES POR ROL
+// PANELES
+// Todos reciben `p` = { enP(fecha), etiqueta, mes } y `uid`:
+// uid = null -> toda la empresa · uid = id -> solo ese usuario.
 // ============================================================
-function AdminDash({ d, usuarios }) {
+function AdminDash({ d, usuarios, p }) {
+  const vigentes = d.ventas.filter(vigente);
   const abiertas = d.op.filter((o) => !o.resultado);
-  const vigentes = d.ventas.filter((v) => v.estado !== 'Cancelada');
   const trabajosAbiertos = d.trabajos.filter((t) => t.estado !== 'Entregada' && t.estado !== 'Finalizada');
-  const porCobrar = vigentes.filter((v) => v.fecha_entrega && !v.cobrado);
   const postPend = d.tpost.filter((t) => t.estado === 'Pendiente');
   const postVenc = postPend.filter((t) => diasDesde(t.objetivo) > 0);
   const esperandoRep = d.trabajos.filter((t) => t.estado === 'Esperando repuestos');
@@ -125,27 +151,34 @@ function AdminDash({ d, usuarios }) {
   const tercIds = new Set(usuarios.filter((u) => rolesDe(u).includes('Vendedor tercerizado')).map((u) => u.id));
   const comSinDef = vigentes.filter((v) => tercIds.has(v.vendedor_id) && !v.comision);
 
+  const ventasP = vigentes.filter((v) => p.enP(v.fecha_ganada));
   const pipeline = ETAPAS_C.map((e) => ({ label: e, value: abiertas.filter((o) => o.etapa === e).length }));
   const porVendedor = usuarios.filter((u) => rolesDe(u).some((r) => r.indexOf('Vendedor') === 0))
-    .map((u) => ({ label: u.nombre, value: vigentes.filter((v) => v.vendedor_id === u.id).length }))
+    .map((u) => ({ label: u.nombre, value: ventasP.filter((v) => v.vendedor_id === u.id).length }))
     .filter((x) => x.value > 0).sort((a, b) => b.value - a.value).slice(0, 6);
 
   return (
     <>
-      <div className="kpi-grid">
-        <Kpi label="Clientes" value={d.clientes.length} foot="registrados" to="/clientes" />
+      <Seccion titulo={`En ${p.etiqueta}`}>
+        <Kpi label="Clientes nuevos" value={d.clientes.filter((c) => p.enP(c.creado_en)).length} foot="dados de alta" to="/clientes" />
+        <Kpi label="Oportunidades nuevas" value={d.op.filter((o) => p.enP(o.fecha_contacto)).length} foot="primer contacto" to="/comercial" />
+        <Kpi label="Ventas ganadas" value={ventasP.length} foot="no canceladas" cl="g" to="/ventas" />
+        <Kpi label="Service ingresados" value={d.trabajos.filter((t) => p.enP(t.ingreso)).length} foot="drones recibidos" to="/service" />
+      </Seccion>
+      <Seccion titulo="Situación actual">
         <Kpi label="Oportunidades abiertas" value={abiertas.length} foot="en gestión" to="/comercial" />
-        <Kpi label="Ventas vigentes" value={vigentes.length} foot="no canceladas" to="/ventas" />
+        <Kpi label="Ventas por cobrar" value={vigentes.filter(porCobrar).length} foot="entregadas sin cobro total" cl="a" to="/ventas" />
         <Kpi label="Service en taller" value={trabajosAbiertos.length} foot="trabajos abiertos" to="/service" />
+        <Kpi label="Postventa pendiente" value={postPend.length} foot={`${postVenc.length} vencidas`} cl={postVenc.length ? 'r' : undefined} to="/postventa" />
+      </Seccion>
+      <div className="two" style={{ marginTop: 18 }}>
+        <ChartCard titulo="Pipeline comercial (abiertas hoy)"><BarsH data={pipeline} /></ChartCard>
+        <ChartCard titulo="Ventas por mes"><BarsV data={ventasPorMes(vigentes, p.mes)} /></ChartCard>
       </div>
       <div className="two" style={{ marginTop: 18 }}>
-        <ChartCard titulo="Pipeline comercial (abiertas)"><BarsH data={pipeline} /></ChartCard>
-        <ChartCard titulo="Ventas por mes"><BarsV data={ventasPorMes(vigentes)} /></ChartCard>
-      </div>
-      <div className="two" style={{ marginTop: 18 }}>
-        <ChartCard titulo="Ventas por vendedor"><BarsH data={porVendedor} /></ChartCard>
+        <ChartCard titulo={`Ventas por vendedor · ${p.etiqueta}`}><BarsH data={porVendedor} /></ChartCard>
         <Alertas items={[
-          { texto: 'Ventas entregadas sin cobrar', n: porCobrar.length, cl: 'a', to: '/ventas' },
+          { texto: 'Ventas entregadas sin cobro total', n: vigentes.filter(porCobrar).length, cl: 'a', to: '/ventas' },
           { texto: 'Postventa vencida', n: postVenc.length, cl: 'r', to: '/postventa' },
           { texto: 'Visitas técnicas a coordinar', n: visitas.length, cl: 'a', to: '/postventa' },
           { texto: 'Service esperando repuestos', n: esperandoRep.length, cl: 'a', to: '/service' },
@@ -157,52 +190,61 @@ function AdminDash({ d, usuarios }) {
   );
 }
 
-function VendedorDash({ d, uid, cfg, tercerizado }) {
-  const misOp = d.op.filter((o) => o.vendedor_id === uid);
-  const abiertas = misOp.filter((o) => !o.resultado);
-  const ganadas = misOp.filter((o) => o.resultado === 'Ganada');
-  const perdidas = misOp.filter((o) => o.resultado === 'Perdida');
-  const misVentas = d.ventas.filter((v) => v.vendedor_id === uid && v.estado !== 'Cancelada');
-  const ganadasMes = misVentas.filter((v) => mesActual(v.fecha_ganada));
-  const porCobrar = misVentas.filter((v) => v.fecha_entrega && !v.cobrado);
-  const sinEntregar = misVentas.filter((v) => !v.fecha_entrega);
-  const conv = (ganadas.length + perdidas.length) ? Math.round((ganadas.length / (ganadas.length + perdidas.length)) * 100) : 0;
+function VendedorDash({ d, uid, yo, cfg, tercerizado, p }) {
+  const ops = uid ? d.op.filter((o) => o.vendedor_id === uid) : d.op;
+  const ventas = (uid ? d.ventas.filter((v) => v.vendedor_id === uid) : d.ventas).filter(vigente);
+  const mis = yo ? 'Mis ' : '';
+
+  const abiertas = ops.filter((o) => !o.resultado);
   const umbral = cfg?.sem_com_amarillo ?? 15;
   const frias = abiertas.filter((o) => diasDesde(o.fecha_contacto) > umbral);
   const enCoti = abiertas.filter((o) => o.etapa === 'Cotización');
-  const comisiones = misVentas.reduce((a, v) => a + (v.comision || 0), 0);
-  const sinComision = misVentas.filter((v) => !v.comision);
+  const sinEntregar = ventas.filter((v) => !v.fecha_entrega);
+
+  // Del período: oportunidades que arrancaron en el período y ventas ganadas/entregadas en él.
+  const opsP = ops.filter((o) => p.enP(o.fecha_contacto));
+  const ganadasP = opsP.filter((o) => o.resultado === 'Ganada');
+  const perdidasP = opsP.filter((o) => o.resultado === 'Perdida');
+  const conv = (ganadasP.length + perdidasP.length) ? Math.round((ganadasP.length / (ganadasP.length + perdidasP.length)) * 100) : 0;
+  const ventasP = ventas.filter((v) => p.enP(v.fecha_ganada));
+  const comisionesP = ventasP.reduce((a, v) => a + (Number(v.comision) || 0), 0);
+  const sinComision = ventas.filter((v) => !v.comision);
 
   const pipeline = ETAPAS_C.map((e) => ({ label: e, value: abiertas.filter((o) => o.etapa === e).length }));
-
   const alertas = [
     { texto: 'Oportunidades frías (sin contacto)', n: frias.length, cl: 'r', to: '/comercial' },
     { texto: 'En cotización (esperando respuesta)', n: enCoti.length, cl: 'a', to: '/comercial' },
-    { texto: 'Mis ventas sin entregar', n: sinEntregar.length, cl: 'a', to: '/ventas' },
+    { texto: `${yo ? 'Mis ventas' : 'Ventas'} sin entregar`, n: sinEntregar.length, cl: 'a', to: '/ventas' },
   ];
   if (tercerizado) alertas.unshift({ texto: 'Ventas sin comisión definida', n: sinComision.length, cl: 'a', to: '/ventas' });
 
   return (
     <>
-      <div className="kpi-grid">
-        <Kpi label="Mis oportunidades abiertas" value={abiertas.length} foot="en gestión" to="/comercial" />
-        <Kpi label="Ganadas este mes" value={ganadasMes.length} foot="nuevas ventas" cl="g" to="/ventas" />
-        <Kpi label="Mis ventas por cobrar" value={porCobrar.length} foot="entregadas sin cobrar" cl="a" to="/ventas" />
+      <Seccion titulo={`En ${p.etiqueta}`}>
+        <Kpi label="Oportunidades nuevas" value={opsP.length} foot="primer contacto en el período" to="/comercial" />
+        <Kpi label="Ventas ganadas" value={ventasP.length} foot="no canceladas" cl="g" to="/ventas" />
+        <Kpi label="Ventas entregadas" value={ventas.filter((v) => p.enP(v.fecha_entrega)).length} foot="con entrega en el período" to="/ventas" />
         {tercerizado
-          ? <Kpi label="Comisiones" value={money(comisiones)} foot="definidas" to="/ventas" />
-          : <Kpi label="Conversión" value={conv + '%'} foot="ganadas / cerradas" to="/comercial" />}
-      </div>
+          ? <Kpi label="Comisiones" value={money(comisionesP)} foot="de las ventas del período" to="/ventas" />
+          : <Kpi label="Conversión" value={conv + '%'} foot="ganadas / cerradas del período" to="/comercial" />}
+      </Seccion>
+      <Seccion titulo="Situación actual">
+        <Kpi label={`${mis}oportunidades abiertas`.replace(/^./, (c) => c.toUpperCase())} value={abiertas.length} foot="en gestión" to="/comercial" />
+        <Kpi label="En cotización" value={enCoti.length} foot="esperando respuesta" cl="a" to="/comercial" />
+        <Kpi label="Oportunidades frías" value={frias.length} foot={`más de ${umbral} días`} cl={frias.length ? 'r' : undefined} to="/comercial" />
+        <Kpi label="Ventas por cobrar" value={ventas.filter(porCobrar).length} foot="entregadas sin cobro total" cl="a" to="/ventas" />
+      </Seccion>
       <div className="two" style={{ marginTop: 18 }}>
-        <ChartCard titulo="Mi pipeline (abiertas)"><BarsH data={pipeline} /></ChartCard>
-        <ChartCard titulo="Mis ventas por mes"><BarsV data={ventasPorMes(misVentas)} /></ChartCard>
+        <ChartCard titulo="Pipeline (abiertas hoy)"><BarsH data={pipeline} /></ChartCard>
+        <ChartCard titulo="Ventas por mes"><BarsV data={ventasPorMes(ventas, p.mes)} /></ChartCard>
       </div>
       <div className="two" style={{ marginTop: 18 }}>
         <Alertas items={alertas} />
-        <ChartCard titulo="Resultado de mis oportunidades">
+        <ChartCard titulo={`Oportunidades del período · ${p.etiqueta}`}>
           <BarsH data={[
-            { label: 'Ganadas', value: ganadas.length, color: 'var(--green)' },
-            { label: 'Perdidas', value: perdidas.length, color: 'var(--red)' },
-            { label: 'Abiertas', value: abiertas.length, color: 'var(--brand)' },
+            { label: 'Ganadas', value: ganadasP.length, color: 'var(--green)' },
+            { label: 'Perdidas', value: perdidasP.length, color: 'var(--red)' },
+            { label: 'Abiertas', value: opsP.filter((o) => !o.resultado).length, color: 'var(--brand)' },
           ]} />
         </ChartCard>
       </div>
@@ -210,62 +252,84 @@ function VendedorDash({ d, uid, cfg, tercerizado }) {
   );
 }
 
-function TecnicoDash({ d, uid }) {
-  // "Míos" = asignado como técnico del trabajo, o con alguna tarea a su nombre
+function TecnicoDash({ d, uid, usuarios, p }) {
+  // "Del técnico" = asignado al trabajo, o con alguna tarea a su nombre
   // (trabajos anteriores al campo tecnico_id se asignaban solo por tarea).
-  const conTareaMia = new Set(d.tareas.filter((ta) => ta.tecnico_id === uid).map((ta) => ta.trabajo_id));
-  const mis = d.trabajos.filter((t) => t.tecnico_id === uid || conTareaMia.has(t.id));
+  let mis = d.trabajos;
+  if (uid) {
+    const conTarea = new Set(d.tareas.filter((ta) => ta.tecnico_id === uid).map((ta) => ta.trabajo_id));
+    mis = d.trabajos.filter((t) => t.tecnico_id === uid || conTarea.has(t.id));
+  }
   const activos = mis.filter((t) => t.estado !== 'Entregada' && t.estado !== 'Finalizada');
-  const diag = mis.filter((t) => t.estado === 'En diagnóstico');
-  const rep = mis.filter((t) => t.estado === 'En reparación');
-  const finMes = mis.filter((t) => (t.estado === 'Finalizada' || t.estado === 'Entregada') && mesActual(t.egreso));
   const porEstado = ESTADOS_S.map((e) => ({ label: e, value: mis.filter((t) => t.estado === e).length }));
   const espera = mis.filter((t) => t.estado === 'Esperando repuestos');
   const esperaMucho = espera.filter((t) => diasDesde(t.espera_desde) > 7);
   const sinDiag = mis.filter((t) => t.estado === 'En diagnóstico' && !t.diagnostico);
   const sinAsignar = d.trabajos.filter((t) => t.estado === 'Ingresada' && !t.tecnico_id);
 
+  const nombre = (id) => usuarios.find((u) => u.id === id)?.nombre || 'Sin asignar';
+  const tecnicoDe = (t) => t.tecnico_id ?? d.tareas.find((ta) => ta.trabajo_id === t.id && ta.tecnico_id)?.tecnico_id;
+  const porTecnico = uid ? null : Object.entries(
+    activos.reduce((acc, t) => { const k = nombre(tecnicoDe(t)); acc[k] = (acc[k] || 0) + 1; return acc; }, {}))
+    .map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+
   return (
     <>
-      <div className="kpi-grid">
-        <Kpi label="Mis trabajos activos" value={activos.length} foot="en el taller" to="/service" />
-        <Kpi label="En diagnóstico" value={diag.length} foot="míos" to="/service" />
-        <Kpi label="En reparación" value={rep.length} foot="míos" to="/service" />
-        <Kpi label="Finalizados este mes" value={finMes.length} foot="terminados" cl="g" to="/service" />
-      </div>
+      <Seccion titulo={`En ${p.etiqueta}`}>
+        <Kpi label="Ingresados" value={mis.filter((t) => p.enP(t.ingreso)).length} foot="drones recibidos" to="/service" />
+        <Kpi label="Finalizados" value={mis.filter((t) => p.enP(t.egreso)).length} foot="reparación terminada" cl="g" to="/service" />
+        <Kpi label="Entregados" value={mis.filter((t) => p.enP(t.fecha_entrega)).length} foot="devueltos al cliente" to="/service" />
+      </Seccion>
+      <Seccion titulo="Situación actual">
+        <Kpi label="Trabajos activos" value={activos.length} foot="en el taller" to="/service" />
+        <Kpi label="En diagnóstico" value={mis.filter((t) => t.estado === 'En diagnóstico').length} to="/service" />
+        <Kpi label="En reparación" value={mis.filter((t) => t.estado === 'En reparación').length} to="/service" />
+        <Kpi label="Esperando repuestos" value={espera.length} cl={espera.length ? 'a' : undefined} to="/service" />
+      </Seccion>
       <div className="two" style={{ marginTop: 18 }}>
-        <ChartCard titulo="Mis trabajos por estado"><BarsH data={porEstado} /></ChartCard>
+        <ChartCard titulo="Trabajos por estado"><BarsH data={porEstado} /></ChartCard>
         <Alertas items={[
           { texto: 'Esperando repuestos hace +7 días', n: esperaMucho.length, cl: 'r', to: '/service' },
           { texto: 'En diagnóstico sin diagnóstico cargado', n: sinDiag.length, cl: 'a', to: '/service' },
           { texto: 'Ingresados sin técnico asignado', n: sinAsignar.length, cl: 'a', to: '/service' },
         ]} />
       </div>
+      {porTecnico && (
+        <div className="two" style={{ marginTop: 18 }}>
+          <ChartCard titulo="Trabajos activos por técnico"><BarsH data={porTecnico} /></ChartCard>
+        </div>
+      )}
     </>
   );
 }
 
 // Las tareas pendientes son una cola compartida del equipo de postventa;
 // con `uid`, lo realizado se cuenta solo para ese usuario.
-function PostventaDash({ d, uid }) {
+function PostventaDash({ d, uid, p }) {
   const pend = d.tpost.filter((t) => t.estado === 'Pendiente');
   const venc = pend.filter((t) => diasDesde(t.objetivo) > 0);
   const prox = pend.filter((t) => { const dd = diasDesde(t.objetivo); return dd <= 0 && dd >= -7; });
-  const realMes = d.tpost.filter((t) => t.estado === 'Realizada' && mesActual(t.fecha_real)
-    && (!uid || t.responsable_id === uid));
   const visitas = d.tpost.filter((t) => t.visita_estado === 'Solicitada' || t.visita_estado === 'Agendada');
-  const porHito = ['1 semana', '1 mes', '2 meses'].map((h) => ({ label: h, value: pend.filter((t) => t.hito === h).length }));
+  const realizadasP = d.tpost.filter((t) => t.estado === 'Realizada' && p.enP(t.fecha_real) && (!uid || t.responsable_id === uid));
+  const hitos = [...new Set(pend.map((t) => t.hito).filter(Boolean))];
+  const porHito = hitos.map((h) => ({ label: h, value: pend.filter((t) => t.hito === h).length }))
+    .sort((a, b) => b.value - a.value).slice(0, 6);
 
   return (
     <>
-      <div className="kpi-grid">
+      <Seccion titulo={`En ${p.etiqueta}`}>
+        <Kpi label="Tareas del período" value={d.tpost.filter((t) => p.enP(t.objetivo)).length} foot="con fecha objetivo en el período" to="/postventa" />
+        <Kpi label="Realizadas" value={realizadasP.length} foot={uid ? 'contactos hechos por el usuario' : 'contactos hechos'} cl="g" to="/postventa" />
+        <Kpi label="Visitas realizadas" value={d.tpost.filter((t) => p.enP(t.visita_real)).length} foot="visitas técnicas" to="/postventa" />
+      </Seccion>
+      <Seccion titulo="Situación actual (cola del equipo)">
         <Kpi label="Tareas pendientes" value={pend.length} foot="por hacer" to="/postventa" />
         <Kpi label="Vencidas" value={venc.length} foot="pasaron el objetivo" cl="r" to="/postventa" />
         <Kpi label="Próximas a vencer" value={prox.length} foot="dentro de 7 días" cl="a" to="/postventa" />
-        <Kpi label="Realizadas este mes" value={realMes.length} foot={uid ? 'contactos hechos por el usuario' : 'contactos hechos'} cl="g" to="/postventa" />
-      </div>
+        <Kpi label="Visitas a coordinar" value={visitas.length} foot="solicitadas o agendadas" cl="a" to="/postventa" />
+      </Seccion>
       <div className="two" style={{ marginTop: 18 }}>
-        <ChartCard titulo="Pendientes por hito"><BarsH data={porHito} /></ChartCard>
+        <ChartCard titulo="Pendientes por tarea"><BarsH data={porHito} /></ChartCard>
         <Alertas items={[
           { texto: 'Tareas vencidas', n: venc.length, cl: 'r', to: '/postventa' },
           { texto: 'Próximas a vencer (7 días)', n: prox.length, cl: 'a', to: '/postventa' },
@@ -282,7 +346,8 @@ export default function Dashboard() {
   const [usuarios, setUsuarios] = useState([]);
   const [cfg, setCfg] = useState(null);
   const [tab, setTab] = useState(null);
-  const [verUsuarioId, setVerUsuarioId] = useState(''); // admin: ver el panel de otro usuario
+  const [verUsuarioId, setVerUsuarioId] = useState(''); // admin: '' = toda la empresa
+  const [periodo, setPeriodo] = useState('');          // '' = mes en curso · 'todo' · 'YYYY-MM'
   const { roles, esAdmin, usuarioActualId } = useAuth();
 
   useEffect(() => {
@@ -301,27 +366,42 @@ export default function Dashboard() {
     obtener('configuracion', 1).then(setCfg).catch(() => {});
   }, []);
 
-  const verUsuario = esAdmin && verUsuarioId ? usuarios.find((u) => u.id === Number(verUsuarioId)) : null;
-  const uid = verUsuario ? verUsuario.id : usuarioActualId;
-  const rr = verUsuario ? rolesDe(verUsuario) : (roles || []);
-  const dashboards = [];
-  if (esAdmin && !verUsuario) dashboards.push({ id: 'admin', label: 'Administración' });
-  if (rr.includes('Vendedor')) dashboards.push({ id: 'vendedor', label: 'Vendedor' });
-  if (rr.includes('Vendedor tercerizado')) dashboards.push({ id: 'terc', label: 'Vendedor tercerizado' });
-  if (rr.includes('Técnico')) dashboards.push({ id: 'tecnico', label: 'Técnico' });
-  if (rr.includes('Postventa')) dashboards.push({ id: 'postventa', label: 'Postventa' });
+  // Período elegido.
+  const mesActual = mesDe(new Date());
+  const mes = periodo === 'todo' ? null : (periodo || mesActual);
+  const p = {
+    mes,
+    etiqueta: mes ? nombreMes(mes) : 'todo el historial',
+    enP: (fecha) => !mes || (Boolean(fecha) && String(fecha).slice(0, 7) === mes),
+  };
 
+  // Usuario elegido (solo admin). Sin elegir, el admin ve toda la empresa.
+  const verUsuario = esAdmin && verUsuarioId ? usuarios.find((u) => u.id === Number(verUsuarioId)) : null;
+  const uid = esAdmin ? (verUsuario ? verUsuario.id : null) : usuarioActualId;
+  const rr = verUsuario ? rolesDe(verUsuario) : (roles || []);
+
+  const dashboards = [];
+  if (esAdmin && !verUsuario) {
+    dashboards.push({ id: 'admin', label: 'Administración' }, { id: 'vendedor', label: 'Comercial' },
+      { id: 'tecnico', label: 'Técnico' }, { id: 'postventa', label: 'Postventa' });
+  } else {
+    if (rr.includes('Vendedor')) dashboards.push({ id: 'vendedor', label: 'Vendedor' });
+    if (rr.includes('Vendedor tercerizado')) dashboards.push({ id: 'terc', label: 'Vendedor tercerizado' });
+    if (rr.includes('Técnico')) dashboards.push({ id: 'tecnico', label: 'Técnico' });
+    if (rr.includes('Postventa')) dashboards.push({ id: 'postventa', label: 'Postventa' });
+  }
   const activo = dashboards.some((x) => x.id === tab) ? tab : dashboards[0]?.id;
 
   if (!d) return <div><PageHeader titulo="Dashboard" /><div className="vacio">Cargando…</div></div>;
 
+  const yo = uid !== null && uid === usuarioActualId;
   function panel() {
     switch (activo) {
-      case 'admin': return <AdminDash d={d} usuarios={usuarios} />;
-      case 'vendedor': return <VendedorDash d={d} uid={uid} cfg={cfg} />;
-      case 'terc': return <VendedorDash d={d} uid={uid} cfg={cfg} tercerizado />;
-      case 'tecnico': return <TecnicoDash d={d} uid={uid} />;
-      case 'postventa': return <PostventaDash d={d} uid={verUsuario ? uid : null} />;
+      case 'admin': return <AdminDash d={d} usuarios={usuarios} p={p} />;
+      case 'vendedor': return <VendedorDash d={d} uid={uid} yo={yo} cfg={cfg} p={p} />;
+      case 'terc': return <VendedorDash d={d} uid={uid} yo={yo} cfg={cfg} p={p} tercerizado />;
+      case 'tecnico': return <TecnicoDash d={d} uid={uid} usuarios={usuarios} p={p} />;
+      case 'postventa': return <PostventaDash d={d} uid={uid} p={p} />;
       default: return <div className="vacio">Este usuario no tiene un panel de Vendedor, Técnico ni Postventa.</div>;
     }
   }
@@ -333,27 +413,40 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader titulo="Dashboard" sub="Indicadores y alertas de tu operación. Tocá un indicador para ir al detalle.">
+      <PageHeader titulo="Dashboard" sub="Indicadores y alertas de tu operación. Tocá un indicador para ir al detalle." />
+
+      <div className="card card-pad" style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         {esAdmin && (
-          <div className="field" style={{ margin: 0, minWidth: 220 }}>
-            <label>Ver situación de</label>
+          <div className="field" style={{ margin: 0, flex: '1 1 220px' }}>
+            <label>Usuario</label>
             <select value={verUsuarioId} onChange={(e) => { setVerUsuarioId(e.target.value); setTab(null); }}>
-              <option value="">Todos (vista de administración)</option>
+              <option value="">Todos · toda la empresa</option>
               {usuariosConPanel.map((u) => (
-                <option key={u.id} value={u.id}>{u.nombre}{u.acceso && u.acceso !== 'Activo' ? ' (inactivo)' : ''}</option>
+                <option key={u.id} value={u.id}>{u.nombre} · {rolesDe(u).filter((r) => r !== 'Administrador').join(', ')}{u.acceso && u.acceso !== 'Activo' ? ' (inactivo)' : ''}</option>
               ))}
             </select>
           </div>
         )}
-      </PageHeader>
+        <div className="field" style={{ margin: 0, flex: '1 1 200px' }}>
+          <label>Período</label>
+          <select value={periodo} onChange={(e) => setPeriodo(e.target.value)}>
+            <option value="">Mes en curso · {nombreMes(mesActual)}</option>
+            {mesesRecientes().slice(1).map((m) => <option key={m} value={m}>{nombreMes(m)}</option>)}
+            <option value="todo">Todo el historial</option>
+          </select>
+        </div>
+        {(verUsuarioId || periodo) && (
+          <button className="btn ghost sm" onClick={() => { setVerUsuarioId(''); setPeriodo(''); setTab(null); }}>Limpiar filtros</button>
+        )}
+      </div>
+
       {verUsuario && (
         <div className="aviso" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="grow">Estás viendo el panel de <b>{verUsuario.nombre}</b> ({rr.join(', ')}), tal como lo ve esa persona.</span>
-          <button className="btn ghost sm" onClick={() => { setVerUsuarioId(''); setTab(null); }}>Volver a la vista general</button>
+          <span className="grow">Estás viendo solo lo de <b>{verUsuario.nombre}</b>, tal como lo ve esa persona.</span>
         </div>
       )}
       {dashboards.length > 1 && (
-        <div className="tabs-row" style={{ marginBottom: 18 }}>
+        <div className="tabs-row" style={{ marginBottom: 6 }}>
           {dashboards.map((x) => (
             <button key={x.id} className={'tab' + (activo === x.id ? ' on' : '')} onClick={() => setTab(x.id)}>{x.label}</button>
           ))}
