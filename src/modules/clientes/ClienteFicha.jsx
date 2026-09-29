@@ -3,7 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { obtener, listar, crear, actualizar } from '../../lib/db';
 import { PageHeader, BackButton, Empty, nombreCliente, fmtFecha, AvisoClienteIncompleto, nroVenta, nroPostventa } from '../../shared/ui.jsx';
 import { useAuth } from '../../shared/Auth.jsx';
+import { useToast } from '../../shared/Toast.jsx';
+import ModalCampos from '../../shared/ModalCampos.jsx';
 import Icon from '../../shared/Icon.jsx';
+import { CAMPOS_EQUIPO } from '../ventas/equipo.js';
 
 const TABS = ['Datos y contactos', 'Historial comercial', 'Ventas', 'Equipos', 'Postventa', 'Service'];
 
@@ -22,8 +25,10 @@ export default function ClienteFicha() {
   const [trabajos, setTrabajos] = useState([]);
   const [tareas, setTareas] = useState([]); // postventa (tareas de las ventas del cliente)
   const [equipos, setEquipos] = useState([]);
+  const [equipoModal, setEquipoModal] = useState(null); // equipo sin venta a crear/editar
   const [tab, setTab] = useState('Datos y contactos');
   const { esAdmin } = useAuth();
+  const toast = useToast();
 
   useEffect(() => {
     obtener('clientes', id).then(setCliente);
@@ -48,6 +53,34 @@ export default function ClienteFicha() {
   }, [id]);
 
   if (!cliente) return <Empty>Cargando…</Empty>;
+
+  // Equipos sin venta (solo admin). No se repite un N° de serie de dron.
+  async function guardarEquipo(valores) {
+    const datos = { ...valores };
+    delete datos.id;
+    if (!datos.fecha_activacion) datos.fecha_activacion = null; // no mandar '' a columna date
+    datos.activado = Boolean(datos.fecha_activacion);
+    const ns = (datos.ns_dron || '').trim().toUpperCase();
+    datos.ns_dron = ns || null;
+    try {
+      if (ns) {
+        const repetido = (await listar('productos')).find((p) => p.id !== equipoModal.id && (p.ns_dron || '').trim().toUpperCase() === ns);
+        if (repetido) { toast(`Ya hay un equipo con el N° de serie ${ns}`, 'err'); return; }
+      }
+      if (equipoModal.id) {
+        const editado = await actualizar('productos', equipoModal.id, datos);
+        setEquipos((es) => es.map((e) => (e.id === equipoModal.id ? { ...e, ...datos, ...editado } : e)));
+      } else {
+        const nuevo = await crear('productos', { ...datos, venta_id: null, cliente_id: Number(id) });
+        setEquipos((es) => [...es, nuevo]);
+      }
+      setEquipoModal(null);
+      toast(equipoModal.id ? 'Equipo actualizado' : 'Equipo agregado');
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo guardar el equipo', 'err');
+    }
+  }
 
   const ventaPorId = (vid) => ventas.find((v) => v.id === vid);
 
@@ -144,6 +177,14 @@ export default function ClienteFicha() {
 
       {tab === 'Equipos' && (
         <div className="card table-wrap" style={{ marginTop: 16 }}>
+          <div className="card-h">
+            <span className="grow">Equipos activados ({equipos.length})</span>
+            {esAdmin && (
+              <button className="btn ghost sm" onClick={() => setEquipoModal({})} title="Equipo vendido antes o por fuera del sistema">
+                <Icon name="plus" size={14} /> Equipo sin venta
+              </button>
+            )}
+          </div>
           {equipos.length === 0 ? (
             <Empty>Este cliente todavía no tiene equipos activados.</Empty>
           ) : (
@@ -151,8 +192,8 @@ export default function ClienteFicha() {
               <thead><tr><th>Equipo</th><th>N° serie dron</th><th>Activación</th><th>Venta</th></tr></thead>
               <tbody>
                 {equipos.map((p) => (
-                  <tr key={p.id} className={p.venta_id ? 'clickable' : undefined}
-                    onClick={() => p.venta_id && navigate(`/ventas/${p.venta_id}`)}>
+                  <tr key={p.id} className={p.venta_id || esAdmin ? 'clickable' : undefined}
+                    onClick={() => (p.venta_id ? navigate(`/ventas/${p.venta_id}`) : esAdmin && setEquipoModal(p))}>
                     <td className="strong">{p.equipo || p.modelo || 'Equipo'}</td>
                     <td>{p.ns_dron || <span className="muted">—</span>}</td>
                     <td>{p.fecha_activacion ? fmtFecha(p.fecha_activacion) : <span className="muted">—</span>}</td>
@@ -163,6 +204,20 @@ export default function ClienteFicha() {
             </table>
           )}
         </div>
+      )}
+
+      {equipoModal && (
+        <ModalCampos
+          titulo={equipoModal.id ? 'Editar equipo' : 'Equipo sin venta'}
+          subtitulo={`${nombreCliente(cliente)} · para equipos vendidos antes o por fuera del sistema. Solo "Equipo" es obligatorio.`}
+          campos={CAMPOS_EQUIPO}
+          valoresIniciales={equipoModal}
+          grid
+          ancho={680}
+          textoConfirmar={equipoModal.id ? 'Guardar cambios' : 'Agregar equipo'}
+          onConfirm={guardarEquipo}
+          onCancel={() => setEquipoModal(null)}
+        />
       )}
 
       {tab === 'Postventa' && (
